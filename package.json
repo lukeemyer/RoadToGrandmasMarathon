@@ -1,0 +1,9 @@
+{
+  "name": "road-to-grandmas-marathon",
+  "version": "1.0.0",
+  "description": "Marathon training tracker with Strava auto-sync via Netlify Functions",
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "^8.0.0"
+  }
+}
