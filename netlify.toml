@@ -5,13 +5,7 @@
 [functions]
   node_bundler = "esbuild"
 
-# SPA fallback — serve index.html for all non-function routes
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-  force = true
-
+# SPA fallback — Netlify routes /.netlify/functions/* natively before this rule
 [[redirects]]
   from = "/*"
   to = "/index.html"
