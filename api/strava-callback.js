@@ -39,14 +39,19 @@ export default async function handler(req) {
 
   let data;
   try {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 10000);
     const res = await fetch("https://www.strava.com/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
+      signal: abort.signal,
     });
+    clearTimeout(timer);
     data = await res.json();
   } catch (e) {
-    return err(String(e));
+    console.error("strava-callback: token exchange failed:", e);
+    return err(`Token exchange failed: ${e.message || String(e)}`);
   }
 
   if (data.errors || !data.access_token) {
