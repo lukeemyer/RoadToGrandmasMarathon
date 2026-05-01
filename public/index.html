@@ -3734,12 +3734,21 @@ kbd {
 
   function applyAccentColor(themeId) {
     const theme = THEME_COLORS.find(t => t.id === themeId) || THEME_COLORS[0];
-    const root = document.documentElement;
+    // Target body, not documentElement — [data-theme="light"] is on body, so inline
+    // styles here win over the CSS rule. Setting on <html> loses the cascade battle.
+    const root = document.body;
     const rgb = hexToRgb(theme.accent);
+    const cool = hexToRgb(theme.cool);
+    const isLight = document.body.getAttribute('data-theme') === 'light';
+    const softA = isLight ? 0.10 : 0.14;
+    const glowA = isLight ? 0.25 : 0.35;
     root.style.setProperty('--accent', theme.accent);
     root.style.setProperty('--accent-strong', theme.strong);
     root.style.setProperty('--accent-cool', theme.cool);
     root.style.setProperty('--accent-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+    root.style.setProperty('--accent-soft', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${softA})`);
+    root.style.setProperty('--accent-glow', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${glowA})`);
+    root.style.setProperty('--accent-cool-soft', `rgba(${cool.r}, ${cool.g}, ${cool.b}, ${softA})`);
   }
 
   // ============================ Inline icons ============================
@@ -3800,6 +3809,7 @@ kbd {
         const next = cur === 'dark' ? 'light' : 'dark';
         document.body.setAttribute('data-theme', next);
         try { localStorage.setItem('rtgm.theme', next); } catch {}
+        applyAccentColor(state.appSettings.accentColor || 'amber');
         renderCharts();
       }
     });
