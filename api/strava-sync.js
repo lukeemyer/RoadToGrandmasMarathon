@@ -1,16 +1,10 @@
 import { Redis } from "@upstash/redis";
 
-const CORS = {
+const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
-
-const json = (data, status = 200) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json" },
-  });
 
 function pad2(n) { return String(n).padStart(2, "0"); }
 
@@ -52,21 +46,19 @@ function transform(activity, gearMap = new Map()) {
 async function getValidTokens(kv) {
   const tokens = await kv.get("runs:strava-tokens");
   if (!tokens) return null;
-
   if (Date.now() / 1000 < tokens.expires_at) return tokens;
-
   const body = new URLSearchParams({
     client_id: process.env.STRAVA_CLIENT_ID,
     client_secret: process.env.STRAVA_CLIENT_SECRET,
     refresh_token: tokens.refresh_token,
     grant_type: "refresh_token",
   });
-  const res = await fetch("https://www.strava.com/oauth/token", {
+  const r = await fetch("https://www.strava.com/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
   });
-  const data = await res.json();
+  const data = await r.json();
   const updated = { ...tokens, ...data };
   await kv.set("runs:strava-tokens", updated);
   return updated;
@@ -76,12 +68,12 @@ async function fetchAllRunActivities(accessToken, afterTs) {
   const runs = [];
   let page = 1;
   while (true) {
-    const res = await fetch(
+    const r = await fetch(
       `https://www.strava.com/api/v3/athlete/activities?after=${afterTs}&per_page=100&page=${page}`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
-    if (!res.ok) break;
-    const batch = await res.json();
+    if (!r.ok) break;
+    const batch = await r.json();
     if (!Array.isArray(batch) || batch.length === 0) break;
     for (const a of batch) {
       if (a.type === "Run" || a.sport_type === "Run") runs.push(a);
@@ -95,43 +87,41 @@ async function fetchAllRunActivities(accessToken, afterTs) {
 async function fetchGearNames(kv, accessToken, activities) {
   const gearIds = [...new Set(activities.map(a => a.gear_id).filter(Boolean))];
   if (!gearIds.length) return new Map();
-
   let cached = {};
   try { cached = (await kv.get("runs:gear-cache")) || {}; } catch {}
-
   const gearMap = new Map(Object.entries(cached));
   const uncached = gearIds.filter(id => !gearMap.has(id));
-
   if (uncached.length) {
     await Promise.all(uncached.map(async id => {
       try {
-        const res = await fetch(`https://www.strava.com/api/v3/gear/${id}`, {
+        const r = await fetch(`https://www.strava.com/api/v3/gear/${id}`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
-        if (res.ok) {
-          const g = await res.json();
+        if (r.ok) {
+          const g = await r.json();
           if (g.name) { gearMap.set(id, g.name); cached[id] = g.name; }
         }
       } catch {}
     }));
     await kv.set("runs:gear-cache", cached);
   }
-
   return gearMap;
 }
 
-export default async function handler(req) {
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+export default async function handler(req, res) {
+  Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
 
-  const authHeader = req.headers.get("Authorization") || "";
+  if (req.method === "OPTIONS") { res.status(204).end(); return; }
+
+  const authHeader = req.headers["authorization"] || "";
   if (authHeader.replace(/^Bearer\s+/i, "") !== process.env.SHARED_SECRET) {
-    return json({ error: "Unauthorized" }, 401);
+    res.status(401).json({ error: "Unauthorized" });
+    return;
   }
 
   const kv = new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN });
 
-  const url = new URL(req.url);
-  const since = url.searchParams.get("since") ||
+  const since = req.query.since ||
     new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const afterTs = Math.floor(new Date(since + "T00:00:00Z").getTime() / 1000);
 
@@ -139,12 +129,12 @@ export default async function handler(req) {
   if (!tokens) {
     let runs = [];
     try { const r = await kv.get("runs:all"); if (Array.isArray(r)) runs = r; } catch {}
-    return json({ runs, added: 0, removed: 0 });
+    res.status(200).json({ runs, added: 0, removed: 0 });
+    return;
   }
 
   const stravaRuns = await fetchAllRunActivities(tokens.access_token, afterTs);
   const stravaIdSet = new Set(stravaRuns.map(a => a.id));
-
   const gearMap = await fetchGearNames(kv, tokens.access_token, stravaRuns);
 
   let blobRuns = [];
@@ -155,15 +145,12 @@ export default async function handler(req) {
 
   const beforeCount = blobRuns.length;
   blobRuns = blobRuns.filter(r =>
-    !r.stravaActivityId ||
-    stravaIdSet.has(r.stravaActivityId) ||
-    r.actualDate < since
+    !r.stravaActivityId || stravaIdSet.has(r.stravaActivityId) || r.actualDate < since
   );
   const removed = beforeCount - blobRuns.length;
 
   const blobIdSet = new Set(blobRuns.filter(r => r.stravaActivityId).map(r => r.stravaActivityId));
-  let added = 0;
-  let gearPatched = 0;
+  let added = 0, gearPatched = 0;
   for (const a of stravaRuns) {
     if (!blobIdSet.has(a.id)) {
       blobRuns.push(transform(a, gearMap));
@@ -181,5 +168,5 @@ export default async function handler(req) {
     await kv.set("runs:all", blobRuns);
   }
 
-  return json({ runs: blobRuns, added, removed });
+  res.status(200).json({ runs: blobRuns, added, removed });
 }

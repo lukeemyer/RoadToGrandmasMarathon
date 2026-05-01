@@ -1,44 +1,29 @@
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-};
+export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
 
-const json = (data, status = 200) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json" },
-  });
+  if (req.method === "OPTIONS") { res.status(204).end(); return; }
 
-function requireAuth(req) {
-  const authHeader = req.headers.get("Authorization") || "";
-  const token = authHeader.replace(/^Bearer\s+/i, "");
-  return token === process.env.SHARED_SECRET;
-}
-
-export default async function handler(req) {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
+  const authHeader = req.headers["authorization"] || "";
+  if (authHeader.replace(/^Bearer\s+/i, "") !== process.env.SHARED_SECRET) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
   }
 
-  if (!requireAuth(req)) {
-    return json({ error: "Unauthorized" }, 401);
-  }
-
-  const url = new URL(req.url);
-  const action = url.searchParams.get("action");
+  const action = req.query.action;
 
   if (action === "list") {
-    const res = await fetch(
+    const r = await fetch(
       `https://www.strava.com/api/v3/push_subscriptions?client_id=${process.env.STRAVA_CLIENT_ID}&client_secret=${process.env.STRAVA_CLIENT_SECRET}`
     );
-    const data = await res.json();
-    return json(data);
+    res.status(r.status).json(await r.json());
+    return;
   }
 
   if (action === "create") {
-    const callbackUrl = url.searchParams.get("callback");
-    if (!callbackUrl) return json({ error: "Missing callback param" }, 400);
+    const callbackUrl = req.query.callback;
+    if (!callbackUrl) { res.status(400).json({ error: "Missing callback param" }); return; }
 
     const body = new URLSearchParams({
       client_id: process.env.STRAVA_CLIENT_ID,
@@ -47,37 +32,35 @@ export default async function handler(req) {
       verify_token: process.env.STRAVA_VERIFY_TOKEN,
     });
 
-    const res = await fetch("https://www.strava.com/api/v3/push_subscriptions", {
+    const r = await fetch("https://www.strava.com/api/v3/push_subscriptions", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
     });
-    const data = await res.json();
-    return json(data, res.status);
+    res.status(r.status).json(await r.json());
+    return;
   }
 
   if (action === "delete") {
-    const id = url.searchParams.get("id");
-    if (!id) return json({ error: "Missing id param" }, 400);
+    const id = req.query.id;
+    if (!id) { res.status(400).json({ error: "Missing id param" }); return; }
 
     const body = new URLSearchParams({
       client_id: process.env.STRAVA_CLIENT_ID,
       client_secret: process.env.STRAVA_CLIENT_SECRET,
     });
 
-    const res = await fetch(
-      `https://www.strava.com/api/v3/push_subscriptions/${id}`,
-      {
-        method: "DELETE",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: body.toString(),
-      }
-    );
+    const r = await fetch(`https://www.strava.com/api/v3/push_subscriptions/${id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
 
-    if (res.status === 204) return json({ deleted: true });
-    const data = await res.json().catch(() => ({}));
-    return json(data, res.status);
+    if (r.status === 204) { res.status(200).json({ deleted: true }); return; }
+    const data = await r.json().catch(() => ({}));
+    res.status(r.status).json(data);
+    return;
   }
 
-  return json({ error: "Unknown action. Use ?action=list|create|delete" }, 400);
+  res.status(400).json({ error: "Unknown action. Use ?action=list|create|delete" });
 }

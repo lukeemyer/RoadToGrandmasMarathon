@@ -1,8 +1,6 @@
 import { Redis } from "@upstash/redis";
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
+function pad2(n) { return String(n).padStart(2, "0"); }
 
 function formatHMS(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -28,8 +26,7 @@ function transformActivity(activity) {
     avgHr: activity.average_heartrate ? Math.round(activity.average_heartrate) : "",
     avgCadence: activity.average_cadence ? Math.round(activity.average_cadence * 2) : "",
     elevationGainFt: activity.total_elevation_gain
-      ? Math.round(activity.total_elevation_gain * 3.28084)
-      : "",
+      ? Math.round(activity.total_elevation_gain * 3.28084) : "",
     shoe: activity.gear?.name || "",
     session: activity.name || "Strava run",
     category: categorize(activity),
@@ -46,12 +43,12 @@ async function refreshTokens(kv, tokens) {
     refresh_token: tokens.refresh_token,
     grant_type: "refresh_token",
   });
-  const res = await fetch("https://www.strava.com/oauth/token", {
+  const r = await fetch("https://www.strava.com/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
   });
-  const data = await res.json();
+  const data = await r.json();
   const updated = { ...tokens, ...data };
   await kv.set("runs:strava-tokens", updated);
   return updated;
@@ -61,10 +58,7 @@ async function processEvent(kv, event) {
   if (event.object_type !== "activity" || event.aspect_type !== "create") return;
 
   let tokens = await kv.get("runs:strava-tokens");
-  if (!tokens) {
-    console.error("strava-webhook: no tokens in KV store");
-    return;
-  }
+  if (!tokens) { console.error("strava-webhook: no tokens in KV store"); return; }
 
   if (Date.now() / 1000 >= tokens.expires_at) {
     tokens = await refreshTokens(kv, tokens);
@@ -86,50 +80,37 @@ async function processEvent(kv, event) {
     if (Array.isArray(raw)) runs = raw;
   } catch {}
 
-  const alreadyExists = runs.some((r) => r.stravaActivityId === run.stravaActivityId);
-  if (alreadyExists) {
+  if (runs.some(r => r.stravaActivityId === run.stravaActivityId)) {
     console.log(`strava-webhook: activity ${run.stravaActivityId} already stored, skipping`);
     return;
   }
 
   runs.push(run);
   await kv.set("runs:all", runs);
-  console.log(`strava-webhook: stored activity ${run.stravaActivityId} (${run.actualDate} ${run.actualMiles}mi)`);
+  console.log(`strava-webhook: stored ${run.stravaActivityId} (${run.actualDate} ${run.actualMiles}mi)`);
 }
 
-export default async function handler(req) {
+export default async function handler(req, res) {
   // GET — Strava webhook verification handshake
   if (req.method === "GET") {
-    const url = new URL(req.url);
-    const mode = url.searchParams.get("hub.mode");
-    const verifyToken = url.searchParams.get("hub.verify_token");
-    const challenge = url.searchParams.get("hub.challenge");
-
+    const { "hub.mode": mode, "hub.verify_token": verifyToken, "hub.challenge": challenge } = req.query;
     if (mode === "subscribe" && verifyToken === process.env.STRAVA_VERIFY_TOKEN) {
-      return new Response(JSON.stringify({ "hub.challenge": challenge }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      res.status(200).json({ "hub.challenge": challenge });
+      return;
     }
-    return new Response("Forbidden", { status: 403 });
+    res.status(403).send("Forbidden");
+    return;
   }
 
-  // POST — activity event
+  // POST — activity event; respond immediately then process
   if (req.method === "POST") {
-    let event;
-    try {
-      event = await req.json();
-    } catch {
-      return new Response("OK", { status: 200 });
-    }
-
+    res.status(200).send("OK");
     const kv = new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN });
-    await processEvent(kv, event).catch((e) =>
+    await processEvent(kv, req.body || {}).catch(e =>
       console.error("strava-webhook processEvent error:", e)
     );
-
-    return new Response("OK", { status: 200 });
+    return;
   }
 
-  return new Response("Method not allowed", { status: 405 });
+  res.status(405).send("Method not allowed");
 }

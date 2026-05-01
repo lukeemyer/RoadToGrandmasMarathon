@@ -6,26 +6,30 @@ const CORS = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
-export default async function handler(req) {
+export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
+    res.status(204).end();
+    return;
   }
 
   if (req.method !== "GET") {
-    return new Response("Method not allowed", { status: 405, headers: CORS });
+    res.status(405).send("Method not allowed");
+    return;
   }
 
-  const kv = new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN });
   let runs = [];
   try {
+    const kv = new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN });
     const raw = await kv.get("runs:all");
     if (Array.isArray(raw)) runs = raw;
-  } catch {
-    // KV not configured yet — return empty array
+  } catch (e) {
+    console.error("get-runs: Redis error:", e.message);
+    // return empty array rather than erroring — page still loads
   }
 
-  return new Response(JSON.stringify({ runs }), {
-    status: 200,
-    headers: { ...CORS, "Content-Type": "application/json" },
-  });
+  res.status(200).setHeader("Content-Type", "application/json").json({ runs });
 }
