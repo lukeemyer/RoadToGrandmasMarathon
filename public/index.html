@@ -3492,7 +3492,7 @@ kbd {
           bestSlot.avgHr = cr.avgHr || bestSlot.avgHr;
           bestSlot.avgCadence = cr.avgCadence || bestSlot.avgCadence;
           bestSlot.elevationGainFt = cr.elevationGainFt || bestSlot.elevationGainFt;
-          bestSlot.shoe = cr.shoe || bestSlot.shoe;
+          bestSlot.shoe = resolveShoe(cr.shoe) || bestSlot.shoe;
           bestSlot.source = cr.source || 'Cloud sync';
           bestSlot.notes = cr.notes || bestSlot.notes;
           if (cr.stravaActivityId) bestSlot.stravaActivityId = cr.stravaActivityId;
@@ -3519,7 +3519,7 @@ kbd {
             avgCadence: cr.avgCadence || '',
             avgHr: cr.avgHr || '',
             elevationGainFt: cr.elevationGainFt || '',
-            shoe: cr.shoe || '',
+            shoe: resolveShoe(cr.shoe) || '',
             source: cr.source || 'Cloud sync',
             notes: cr.notes || '',
             workoutDetails: '',
@@ -3753,6 +3753,27 @@ kbd {
       hrCount: hrEntries.length, cadCount: cadEntries.length,
       totalEntries, completedCount
     };
+  }
+
+  // Fuzzy-match a Strava gear name to the nearest configured shoe name.
+  // Score = fraction of configured shoe's tokens that appear in the Strava name.
+  // Requires >= 50% overlap; returns the original string if no shoe qualifies.
+  function resolveShoe(stravaName) {
+    if (!stravaName) return stravaName;
+    const shoes = (state && state.shoes) || [];
+    if (!shoes.length) return stravaName;
+    if (shoes.some(s => s.name === stravaName)) return stravaName;
+    function tok(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean); }
+    const stravaSet = new Set(tok(stravaName));
+    let best = null, bestScore = 0;
+    for (const s of shoes) {
+      const tokens = tok(s.name);
+      if (!tokens.length) continue;
+      const overlap = tokens.filter(t => stravaSet.has(t)).length;
+      const score = overlap / tokens.length;
+      if (score >= 0.5 && score > bestScore) { best = s.name; bestScore = score; }
+    }
+    return best || stravaName;
   }
 
   function shoeMileage(shoeName) {
@@ -7300,6 +7321,18 @@ kbd {
     if (mode === 'read') document.body.classList.add('read-only');
 
     state = loadState();
+
+    // Retroactively normalize Strava shoe names against configured shoes
+    {
+      let fixed = 0;
+      state.entries.forEach(e => {
+        if (e.source === 'Strava' && e.shoe) {
+          const resolved = resolveShoe(e.shoe);
+          if (resolved !== e.shoe) { e.shoe = resolved; fixed++; }
+        }
+      });
+      if (fixed) saveState();
+    }
 
     // Restore any plan entries that were fully deleted from state but still exist in ORIGINAL_DATA
     if (mode === 'owner') {
