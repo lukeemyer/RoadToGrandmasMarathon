@@ -3415,12 +3415,14 @@ kbd {
           slot.elevationGainFt = cr.elevationGainFt || slot.elevationGainFt;
           slot.source = cr.source || 'Cloud sync';
           slot.notes = cr.notes || slot.notes;
+          if (cr.stravaActivityId) slot.stravaActivityId = cr.stravaActivityId;
           updated++;
         } else {
           // Ad-hoc entry — synthesize an id and append
           const id = 'cloud_' + cr.actualDate.replace(/-/g, '_') + '_' + Math.random().toString(36).slice(2, 7);
           state.entries.push({
             id,
+            stravaActivityId: cr.stravaActivityId || null,
             plannedDate: cr.actualDate,
             day: '',
             week: 0,
@@ -3453,7 +3455,71 @@ kbd {
       return { added, updated };
     }
 
-    async function pullAndMerge() {
+    // Remove or reset local entries whose Strava activity was deleted.
+    // Uses stravaActivityId when available, falls back to date+miles match.
+    function reconcileStravaDeletions(cloudRuns) {
+      const byId = new Map(cloudRuns.filter(r => r.stravaActivityId).map(r => [r.stravaActivityId, r]));
+      const byDateMiles = new Map(cloudRuns.filter(r => r.actualDate).map(r =>
+        [`${r.actualDate}_${parseFloat(r.actualMiles || 0).toFixed(1)}`, r]
+      ));
+      let removed = 0;
+      state.entries = state.entries.reduce((acc, entry) => {
+        if (entry.source !== 'Strava') { acc.push(entry); return acc; }
+        const stillExists =
+          (entry.stravaActivityId && byId.has(entry.stravaActivityId)) ||
+          (!entry.stravaActivityId && entry.actualDate &&
+            byDateMiles.has(`${entry.actualDate}_${parseFloat(entry.actualMiles || 0).toFixed(1)}`));
+        if (stillExists) { acc.push(entry); return acc; }
+        removed++;
+        if (entry.id && entry.id.startsWith('cloud_')) {
+          return acc; // ad-hoc entry: drop it
+        }
+        // planned slot: reset back to Planned
+        const reset = { ...entry };
+        delete reset.stravaActivityId;
+        delete reset.actualDate;
+        delete reset.runTime;
+        delete reset.avgHr;
+        delete reset.avgCadence;
+        delete reset.elevationGainFt;
+        delete reset.notes;
+        delete reset.source;
+        reset.actualMiles = reset.plannedMiles || 0;
+        reset.status = 'Planned';
+        acc.push(reset);
+        return acc;
+      }, []);
+      if (removed) saveState();
+      return removed;
+    }
+
+    // Call strava-sync endpoint: reconciles blob with Strava, returns updated runs list.
+    async function syncFromStrava(since) {
+      if (!isEnabled()) return null;
+      const cfg = getConfig();
+      const base = cfg.endpoint.replace(/\/$/, '');
+      const url = since ? `${base}/strava-sync?since=${since}` : `${base}/strava-sync`;
+      try {
+        const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + cfg.token } });
+        if (!res.ok) return null;
+        return await res.json(); // { runs, added, removed }
+      } catch (err) {
+        console.warn('CloudSync: strava-sync failed', err);
+        return null;
+      }
+    }
+
+    async function pullAndMerge(since) {
+      // Full reconciliation when since is provided (page-load path)
+      if (since) {
+        const syncResult = await syncFromStrava(since);
+        if (syncResult) {
+          const removed = reconcileStravaDeletions(syncResult.runs || []);
+          const merged = mergeCloudRuns(syncResult.runs || []) || { added: 0, updated: 0 };
+          return { added: merged.added, updated: merged.updated, removed };
+        }
+      }
+      // Fallback: plain blob read (used by Sync Now button)
       const runs = await fetchCloudRuns();
       if (!runs) return null;
       return mergeCloudRuns(runs);
@@ -6990,15 +7056,20 @@ kbd {
     renderAll();
     bindKeyboardShortcuts();
 
-    // Cloud sync: if configured, pull on load (non-blocking) and merge silently.
+    // Cloud sync: full Strava reconciliation on every page load.
+    // Passes the training plan start date so strava-sync fetches the whole window.
     if (CloudSync.isEnabled()) {
-      CloudSync.pullAndMerge().then(result => {
-        if (result && (result.added > 0 || result.updated > 0)) {
+      const planStart = state.entries.length
+        ? state.entries.reduce((m, e) => e.plannedDate && e.plannedDate < m ? e.plannedDate : m, '9999-99-99')
+        : null;
+      CloudSync.pullAndMerge(planStart).then(result => {
+        if (result && (result.added > 0 || result.updated > 0 || result.removed > 0)) {
           renderAll();
           const parts = [];
           if (result.added) parts.push(`${result.added} new run${result.added === 1 ? '' : 's'}`);
-          if (result.updated) parts.push(`${result.updated} planned slot${result.updated === 1 ? '' : 's'} filled`);
-          toast(`Cloud sync: ${parts.join(', ')}`);
+          if (result.updated) parts.push(`${result.updated} slot${result.updated === 1 ? '' : 's'} filled`);
+          if (result.removed) parts.push(`${result.removed} removed`);
+          toast(`Strava sync: ${parts.join(', ')}`);
         }
       }).catch(err => console.warn('Cloud sync error:', err));
     }
