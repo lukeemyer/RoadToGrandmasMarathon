@@ -1,4 +1,4 @@
-import { getStore } from "@netlify/blobs";
+import { kv } from "@vercel/kv";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -49,8 +49,8 @@ function transform(activity, gearMap = new Map()) {
   };
 }
 
-async function getValidTokens(store) {
-  const tokens = await store.get("strava-tokens", { type: "json" });
+async function getValidTokens() {
+  const tokens = await kv.get("runs:strava-tokens");
   if (!tokens) return null;
 
   if (Date.now() / 1000 < tokens.expires_at) return tokens;
@@ -68,7 +68,7 @@ async function getValidTokens(store) {
   });
   const data = await res.json();
   const updated = { ...tokens, ...data };
-  await store.setJSON("strava-tokens", updated);
+  await kv.set("runs:strava-tokens", updated);
   return updated;
 }
 
@@ -92,13 +92,12 @@ async function fetchAllRunActivities(accessToken, afterTs) {
   return runs;
 }
 
-async function fetchGearNames(accessToken, activities, store) {
+async function fetchGearNames(accessToken, activities) {
   const gearIds = [...new Set(activities.map(a => a.gear_id).filter(Boolean))];
   if (!gearIds.length) return new Map();
 
-  // Load cached gear names so we don't re-hit the Strava API on every sync
   let cached = {};
-  try { cached = (await store.get("gear-cache", { type: "json" })) || {}; } catch {}
+  try { cached = (await kv.get("runs:gear-cache")) || {}; } catch {}
 
   const gearMap = new Map(Object.entries(cached));
   const uncached = gearIds.filter(id => !gearMap.has(id));
@@ -115,7 +114,7 @@ async function fetchGearNames(accessToken, activities, store) {
         }
       } catch {}
     }));
-    await store.setJSON("gear-cache", cached);
+    await kv.set("runs:gear-cache", cached);
   }
 
   return gearMap;
@@ -130,38 +129,28 @@ export default async function handler(req) {
   }
 
   const url = new URL(req.url);
-  // since defaults to 90 days ago if not specified
   const since = url.searchParams.get("since") ||
     new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const afterTs = Math.floor(new Date(since + "T00:00:00Z").getTime() / 1000);
 
-  const store = getStore("runs");
-
-  const tokens = await getValidTokens(store);
+  const tokens = await getValidTokens();
   if (!tokens) {
-    // No tokens yet — return blob as-is with no changes
     let runs = [];
-    try { const r = await store.get("all", { type: "json" }); if (Array.isArray(r)) runs = r; } catch {}
+    try { const r = await kv.get("runs:all"); if (Array.isArray(r)) runs = r; } catch {}
     return json({ runs, added: 0, removed: 0 });
   }
 
-  // Fetch all Strava running activities in the window
   const stravaRuns = await fetchAllRunActivities(tokens.access_token, afterTs);
   const stravaIdSet = new Set(stravaRuns.map(a => a.id));
 
-  // Fetch gear names (list endpoint only returns gear_id, not gear.name).
-  // Uses a blob cache so gear API calls only happen for new/unseen gear IDs.
-  const gearMap = await fetchGearNames(tokens.access_token, stravaRuns, store);
+  const gearMap = await fetchGearNames(tokens.access_token, stravaRuns);
 
-  // Read current blob
   let blobRuns = [];
   try {
-    const raw = await store.get("all", { type: "json" });
+    const raw = await kv.get("runs:all");
     if (Array.isArray(raw)) blobRuns = raw;
   } catch {}
 
-  // Remove entries deleted from Strava (only within the sync window to avoid
-  // clobbering runs from before the plan start that we never fetched)
   const beforeCount = blobRuns.length;
   blobRuns = blobRuns.filter(r =>
     !r.stravaActivityId ||
@@ -170,7 +159,6 @@ export default async function handler(req) {
   );
   const removed = beforeCount - blobRuns.length;
 
-  // Add runs missing from blob; also patch shoe on existing entries that have it empty
   const blobIdSet = new Set(blobRuns.filter(r => r.stravaActivityId).map(r => r.stravaActivityId));
   let added = 0;
   let gearPatched = 0;
@@ -179,7 +167,6 @@ export default async function handler(req) {
       blobRuns.push(transform(a, gearMap));
       added++;
     } else {
-      // Patch shoe on existing entries that were synced before gear names were fetched
       const existing = blobRuns.find(r => r.stravaActivityId === a.id);
       if (existing && !existing.shoe) {
         const shoeName = a.gear?.name || gearMap.get(a.gear_id) || "";
@@ -189,7 +176,7 @@ export default async function handler(req) {
   }
 
   if (added > 0 || removed > 0 || gearPatched > 0) {
-    await store.setJSON("all", blobRuns);
+    await kv.set("runs:all", blobRuns);
   }
 
   return json({ runs: blobRuns, added, removed });

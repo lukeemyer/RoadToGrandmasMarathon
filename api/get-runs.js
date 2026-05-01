@@ -1,4 +1,4 @@
-import { getStore } from "@netlify/blobs";
+import { kv } from "@vercel/kv";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -15,13 +15,12 @@ export default async function handler(req) {
     return new Response("Method not allowed", { status: 405, headers: CORS });
   }
 
-  const store = getStore("runs");
   let runs = [];
   try {
-    const raw = await store.get("all", { type: "json" });
+    const raw = await kv.get("runs:all");
     if (Array.isArray(raw)) runs = raw;
   } catch {
-    // blob doesn't exist yet — return empty array
+    // KV not configured yet — return empty array
   }
 
   return new Response(JSON.stringify({ runs }), {

@@ -196,6 +196,10 @@ a:hover { text-decoration: underline; }
   gap: 10px;
   flex-wrap: wrap;
 }
+.strava-sync-btn { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.strava-sync-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.strava-sync-btn.is-syncing svg { animation: fab-sync-spin 0.9s linear infinite; }
+@media (max-width: 480px) { .strava-sync-btn span { display: none; } }
 
 .mode-pill {
   display: inline-flex;
@@ -3277,8 +3281,9 @@ kbd {
   }
   function fmtPace(secPerMile) {
     if (!isFinite(secPerMile) || secPerMile == null) return '—';
-    const m = Math.floor(secPerMile / 60);
-    const s = Math.round(secPerMile % 60);
+    const total = Math.round(secPerMile);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
     return `${m}:${String(s).padStart(2, '0')}/mi`;
   }
   function paceFromEntry(entry) {
@@ -3315,15 +3320,11 @@ kbd {
     return 'owner'; // local visit by owner
   }
 
-  // ============================ Cloud Sync (optional) ============================
-  // Cloud sync is OFF by default. If you set a sync endpoint and token in Settings → Data,
-  // the app will pull cloud-logged runs (e.g. from an Apple Shortcut) on load and merge them
-  // into local state. Endpoint contract:
-  //   GET  {endpoint}/get-runs             → { runs: [ { actualDate, actualMiles, runTime, avgHr, ... }, ... ] }
-  //   POST {endpoint}/log-run              → accepts { actualDate, actualMiles, runTime, ... } and stores it
-  // Both endpoints are expected to require the configured token in either:
-  //   Authorization: Bearer <token>     or     ?token=<token>
-  // The app sends the header automatically.
+  // ============================ Cloud Sync ============================
+  // get-runs is a public endpoint — any device can pull completed runs from the blob.
+  // strava-sync is auth-only (requires SHARED_SECRET token) — only the owner's devices
+  // with the token stored in Settings will trigger Strava reconciliation.
+  // All devices always attempt a public blob read on load so runs appear everywhere.
   const CloudSync = (() => {
     const CFG_KEY = 'rtgm.cloudSync.v1';
 
@@ -3334,43 +3335,42 @@ kbd {
     function setConfig(cfg) {
       try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch {}
     }
+    // True only when the owner token is configured (needed for strava-sync writes)
     function isEnabled() {
       const cfg = getConfig();
-      return cfg.enabled && cfg.endpoint && cfg.token;
+      return !!(cfg.enabled && cfg.endpoint && cfg.token);
+    }
+    // Always derives the endpoint from the current origin so any device can read
+    function resolveEndpoint() {
+      const cfg = getConfig();
+      if (cfg.endpoint) return cfg.endpoint.replace(/\/$/, '');
+      return window.location.origin + '/api';
     }
 
-    async function fetchCloudRuns() {
-      if (!isEnabled()) return null;
-      const cfg = getConfig();
-      const url = cfg.endpoint.replace(/\/$/, '') + '/get-runs';
+    // Public read — no token required
+    async function fetchPublicRuns() {
+      const url = resolveEndpoint() + '/get-runs';
       try {
-        const res = await fetch(url, {
-          method: 'GET',
-          headers: { 'Authorization': 'Bearer ' + cfg.token }
-        });
-        if (!res.ok) {
-          console.warn('CloudSync: get-runs returned', res.status);
-          return null;
-        }
+        const res = await fetch(url);
+        if (!res.ok) return null;
         const data = await res.json();
-        return Array.isArray(data) ? data : (data.runs || []);
+        return Array.isArray(data.runs) ? data.runs : (Array.isArray(data) ? data : null);
       } catch (err) {
-        console.warn('CloudSync: fetch failed', err);
+        console.warn('CloudSync: get-runs failed', err);
         return null;
       }
     }
 
+    async function fetchCloudRuns() { return fetchPublicRuns(); }
+
     async function postRun(runData) {
       if (!isEnabled()) return false;
       const cfg = getConfig();
-      const url = cfg.endpoint.replace(/\/$/, '') + '/log-run';
+      const url = resolveEndpoint() + '/log-run';
       try {
         const res = await fetch(url, {
           method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + cfg.token,
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Authorization': 'Bearer ' + cfg.token, 'Content-Type': 'application/json' },
           body: JSON.stringify(runData)
         });
         return res.ok;
@@ -3380,46 +3380,96 @@ kbd {
       }
     }
 
+    // Score a cloud run against a plan slot (higher = better match).
+    // Returns null if the pair is outside the acceptable window.
+    function scoreMatch(crMiles, crDate, slotMiles, slotDate) {
+      // dateDiff: positive = run happened after planned date (ran late / catching up)
+      //           negative = run happened before planned date (ran early)
+      const dateDiff = Math.round((crDate - slotDate) / 86400000);
+      if (dateDiff < -1 || dateDiff > 4) return null; // outside acceptable window
+      const milesDiff = Math.abs(crMiles - slotMiles);
+      // Running early is penalised slightly more than running late.
+      // Miles penalty is lower than date penalty so a nearby slot with matching
+      // miles still beats a same-day slot with very different miles (skip detection).
+      const datePenalty = dateDiff >= 0 ? dateDiff * 10 : (-dateDiff) * 14;
+      const milesPenalty = milesDiff * 7;
+      const score = 100 - datePenalty - milesPenalty;
+      return score > 25 ? score : null; // minimum threshold to accept a match
+    }
+
     // Merge cloud runs into local state.
-    // Strategy: for each cloud run, if a planned entry exists on the same actualDate
-    // and is still uncompleted, fill it in. Otherwise create a new ad-hoc entry.
+    // Uses a greedy scored matching algorithm so skipped days, pushed runs,
+    // and small mileage differences all route to the right plan slot.
     function mergeCloudRuns(cloudRuns) {
-      if (!Array.isArray(cloudRuns) || !cloudRuns.length) return 0;
+      if (!Array.isArray(cloudRuns) || !cloudRuns.length) return { added: 0, updated: 0 };
       let added = 0, updated = 0;
 
-      cloudRuns.forEach(cr => {
-        if (!cr || !cr.actualDate) return;
+      // Remove stale cloud_ ad-hoc entries whose Strava IDs are included in this
+      // sync pass AND are not already sitting in a real plan slot — they'll be
+      // re-evaluated below and may now match a slot.
+      const idsInPlanSlot = new Set(
+        state.entries
+          .filter(e => !e.id?.startsWith('cloud_') && entryIsCompleted(e) && e.stravaActivityId)
+          .map(e => e.stravaActivityId)
+      );
+      const incomingIds = new Set(cloudRuns.filter(r => r.stravaActivityId).map(r => r.stravaActivityId));
+      state.entries = state.entries.filter(e =>
+        !(e.id?.startsWith('cloud_') && e.stravaActivityId &&
+          incomingIds.has(e.stravaActivityId) && !idsInPlanSlot.has(e.stravaActivityId))
+      );
 
-        // Skip if already merged — prefer stravaActivityId match, fall back to date+miles+time
-        const existing = state.entries.find(e =>
-          (cr.stravaActivityId && e.stravaActivityId === cr.stravaActivityId) ||
-          (e.actualDate === cr.actualDate &&
-            Math.abs((parseFloat(e.actualMiles) || 0) - (parseFloat(cr.actualMiles) || 0)) < 0.05 &&
-            (e.runTime === cr.runTime || (e.source && e.source.includes('Apple'))))
+      // Process chronologically so earlier runs claim earlier slots first
+      const sorted = [...cloudRuns]
+        .filter(r => r && r.actualDate)
+        .sort((a, b) => a.actualDate.localeCompare(b.actualDate));
+
+      // Track plan slots filled in this pass so two runs can't claim the same slot
+      const filledSlotIds = new Set();
+
+      for (const cr of sorted) {
+        // Already properly housed in a non-cloud_ plan slot — nothing to do
+        const inPlanSlot = state.entries.find(e =>
+          !e.id?.startsWith('cloud_') && entryIsCompleted(e) &&
+          ((cr.stravaActivityId && e.stravaActivityId === cr.stravaActivityId) ||
+           (e.actualDate === cr.actualDate &&
+             Math.abs((parseFloat(e.actualMiles) || 0) - (parseFloat(cr.actualMiles) || 0)) < 0.05 &&
+             (e.runTime === cr.runTime || (e.source && e.source.includes('Apple')))))
         );
-        if (existing) return;
+        if (inPlanSlot) continue;
 
-        // Look for a planned slot on this date that's still uncompleted
-        const slot = state.entries.find(e =>
-          e.plannedDate === cr.actualDate &&
-          !entryIsCompleted(e) &&
-          !entryIsCross(e)
-        );
+        const crDate = parseDateLocal(cr.actualDate);
+        const crMiles = parseFloat(cr.actualMiles) || 0;
 
-        if (slot) {
-          slot.status = 'Completed';
-          slot.actualDate = cr.actualDate;
-          slot.actualMiles = parseFloat(cr.actualMiles) || slot.actualMiles;
-          slot.runTime = cr.runTime || slot.runTime;
-          slot.avgHr = cr.avgHr || slot.avgHr;
-          slot.avgCadence = cr.avgCadence || slot.avgCadence;
-          slot.elevationGainFt = cr.elevationGainFt || slot.elevationGainFt;
-          slot.source = cr.source || 'Cloud sync';
-          slot.notes = cr.notes || slot.notes;
-          if (cr.stravaActivityId) slot.stravaActivityId = cr.stravaActivityId;
+        // Score every available plan slot and pick the best one
+        let bestSlot = null;
+        let bestScore = -Infinity;
+
+        for (const slot of state.entries) {
+          if (filledSlotIds.has(slot.id)) continue;
+          if (entryIsCompleted(slot) || entryIsCross(slot)) continue;
+          const slotDate = parseDateLocal(slot.plannedDate);
+          if (!slotDate) continue;
+          const slotMiles = parseFloat(slot.plannedMiles) || 0;
+          const s = scoreMatch(crMiles, crDate, slotMiles, slotDate);
+          if (s !== null && s > bestScore) { bestScore = s; bestSlot = slot; }
+        }
+
+        if (bestSlot) {
+          filledSlotIds.add(bestSlot.id);
+          bestSlot.status = 'Completed';
+          bestSlot.actualDate = cr.actualDate;
+          bestSlot.actualMiles = crMiles || bestSlot.actualMiles;
+          bestSlot.runTime = cr.runTime || bestSlot.runTime;
+          bestSlot.avgHr = cr.avgHr || bestSlot.avgHr;
+          bestSlot.avgCadence = cr.avgCadence || bestSlot.avgCadence;
+          bestSlot.elevationGainFt = cr.elevationGainFt || bestSlot.elevationGainFt;
+          bestSlot.shoe = cr.shoe || bestSlot.shoe;
+          bestSlot.source = cr.source || 'Cloud sync';
+          bestSlot.notes = cr.notes || bestSlot.notes;
+          if (cr.stravaActivityId) bestSlot.stravaActivityId = cr.stravaActivityId;
           updated++;
         } else {
-          // Ad-hoc entry — synthesize an id and append
+          // No suitable plan slot — store as ad-hoc cloud entry
           const id = 'cloud_' + cr.actualDate.replace(/-/g, '_') + '_' + Math.random().toString(36).slice(2, 7);
           state.entries.push({
             id,
@@ -3430,12 +3480,12 @@ kbd {
             session: cr.session || 'Logged run',
             originalSession: '',
             category: cr.category || 'Easy',
-            plannedMiles: cr.actualMiles || 0,
+            plannedMiles: crMiles || 0,
             plannedPace: '',
             planNotes: '',
             status: 'Completed',
             actualDate: cr.actualDate,
-            actualMiles: parseFloat(cr.actualMiles) || 0,
+            actualMiles: crMiles || 0,
             runTime: cr.runTime || '',
             avgCadence: cr.avgCadence || '',
             avgHr: cr.avgHr || '',
@@ -3450,7 +3500,7 @@ kbd {
           });
           added++;
         }
-      });
+      }
 
       if (added || updated) saveState();
       return { added, updated };
@@ -3495,36 +3545,54 @@ kbd {
       return removed;
     }
 
-    // Call strava-sync endpoint: reconciles blob with Strava, returns updated runs list.
+    // Owner-only: reconciles blob with Strava, returns updated runs list.
     async function syncFromStrava(since) {
       if (!isEnabled()) return null;
       const cfg = getConfig();
-      const base = cfg.endpoint.replace(/\/$/, '');
+      const base = resolveEndpoint();
       const url = since ? `${base}/strava-sync?since=${since}` : `${base}/strava-sync`;
       try {
         const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + cfg.token } });
         if (!res.ok) return null;
-        return await res.json(); // { runs, added, removed }
+        return await res.json();
       } catch (err) {
         console.warn('CloudSync: strava-sync failed', err);
         return null;
       }
     }
 
-    async function pullAndMerge(since) {
-      // Full reconciliation when since is provided (page-load path)
-      if (since) {
-        const syncResult = await syncFromStrava(since);
-        if (syncResult) {
-          const removed = reconcileStravaDeletions(syncResult.runs || []);
-          const merged = mergeCloudRuns(syncResult.runs || []) || { added: 0, updated: 0 };
-          return { added: merged.added, updated: merged.updated, removed };
+    // pullAndMerge always runs on every device:
+    //   - Owner (token configured): strava-sync first (reconcile with Strava), then merge
+    //   - Any device (phone, tablet, shared): public blob read, then merge
+    // force=true bypasses the cooldown (used by manual Sync Now / FAB buttons).
+    const SYNC_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+    const LAST_SYNC_KEY = 'rtgm.lastStravaSync';
+    async function pullAndMerge(since, { force = false } = {}) {
+      let runs = null;
+
+      if (since && isEnabled()) {
+        const lastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY) || '0', 10);
+        const elapsed = Date.now() - lastSync;
+        if (force || elapsed > SYNC_COOLDOWN_MS) {
+          // Owner path: full Strava reconciliation
+          const syncResult = await syncFromStrava(since);
+          if (syncResult) {
+            runs = syncResult.runs || [];
+            localStorage.setItem(LAST_SYNC_KEY, String(Date.now()));
+          }
         }
       }
-      // Fallback: plain blob read (used by Sync Now button)
-      const runs = await fetchCloudRuns();
+
+      if (!runs) {
+        // Public path: read current blob directly (no token needed)
+        runs = await fetchPublicRuns();
+      }
+
       if (!runs) return null;
-      return mergeCloudRuns(runs);
+
+      const removed = reconcileStravaDeletions(runs);
+      const merged = mergeCloudRuns(runs) || { added: 0, updated: 0 };
+      return { added: merged.added, updated: merged.updated, removed };
     }
 
     return { getConfig, setConfig, isEnabled, fetchCloudRuns, postRun, mergeCloudRuns, pullAndMerge };
@@ -3886,8 +3954,35 @@ kbd {
     const settingsBtn = el('button', { class: 'icon-btn', title: 'Settings', 'aria-label': 'Settings', onClick: openSettings, html: ICONS.settings, dataset: { editOnly: '' } });
     const shareBtn = el('button', { class: 'icon-btn', title: 'Share / export', 'aria-label': 'Share', onClick: openShare, html: ICONS.share });
 
-    const actions = el('div', { class: 'header-actions' }, modePill, themeBtn, shareBtn, settingsBtn);
-    if (mode !== 'owner') actions.querySelector('[data-edit-only]')?.remove();
+    const stravaBtn = el('button', { class: 'btn btn-ghost strava-sync-btn', html: ICONS.sync + '<span>Sync with Strava</span>', dataset: { editOnly: '' } });
+    stravaBtn.addEventListener('click', async () => {
+      stravaBtn.disabled = true;
+      stravaBtn.classList.add('is-syncing');
+      const planStart = state.entries.length
+        ? state.entries.reduce((m, e) => e.plannedDate && e.plannedDate < m ? e.plannedDate : m, '9999-99-99')
+        : null;
+      try {
+        const result = await CloudSync.pullAndMerge(planStart, { force: true });
+        if (!result) {
+          toast('Sync failed — check settings', 'error');
+        } else if (!result.added && !result.updated && !result.removed) {
+          toast('Already up to date');
+        } else {
+          renderAll();
+          const parts = [];
+          if (result.added) parts.push(`${result.added} new run${result.added === 1 ? '' : 's'}`);
+          if (result.updated) parts.push(`${result.updated} slot${result.updated === 1 ? '' : 's'} filled`);
+          if (result.removed) parts.push(`${result.removed} removed`);
+          toast(`Strava sync: ${parts.join(', ')}`);
+        }
+      } finally {
+        stravaBtn.disabled = false;
+        stravaBtn.classList.remove('is-syncing');
+      }
+    });
+
+    const actions = el('div', { class: 'header-actions' }, modePill, stravaBtn, themeBtn, shareBtn, settingsBtn);
+    if (mode !== 'owner') actions.querySelectorAll('[data-edit-only]').forEach(n => n.remove());
     head.appendChild(brand);
     head.appendChild(actions);
   }
@@ -4064,8 +4159,12 @@ kbd {
       trainingWeek = upcoming.length ? upcoming[0].week : null;
     }
 
+    const inWeekIds = new Set(inWeek.map(e => e.id));
     const weekEntries = trainingWeek != null
-      ? state.entries.filter(e => e.week === trainingWeek && (includeCross || !entryIsCross(e)))
+      ? state.entries.filter(e =>
+          (e.week === trainingWeek || inWeekIds.has(e.id)) &&
+          (includeCross || !entryIsCross(e))
+        )
       : inWeek;
 
     weekEntries.sort((a, b) => a.plannedDate.localeCompare(b.plannedDate));
@@ -4087,7 +4186,7 @@ kbd {
         </div>
         <div class="day-session">${e.session}</div>
         <div class="day-line">
-          <span>${e.plannedMiles ? e.plannedMiles + ' mi' : '—'}</span>
+          <span>${isCompleted ? (e.actualMiles ? e.actualMiles + ' mi' : '—') : (e.plannedMiles ? e.plannedMiles + ' mi' : '—')}</span>
           <span>${e.shoe || ''}</span>
         </div>
         <div class="day-status">
@@ -5683,14 +5782,71 @@ kbd {
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  function reassignRunToSlot(fromId, toId) {
+    const from = state.entries.find(e => e.id === fromId);
+    const to   = state.entries.find(e => e.id === toId);
+    if (!from || !to) return;
+
+    // Capture all actual-run fields from the source entry
+    const run = {
+      status: 'Completed',
+      actualDate: from.actualDate || from.plannedDate,
+      actualMiles: from.actualMiles,
+      runTime: from.runTime,
+      avgHr: from.avgHr,
+      avgCadence: from.avgCadence,
+      elevationGainFt: from.elevationGainFt,
+      shoe: from.shoe,
+      source: from.source,
+      notes: from.notes,
+      stravaActivityId: from.stravaActivityId,
+    };
+
+    // Reset the source slot
+    if (from.id.startsWith('cloud_')) {
+      state.entries = state.entries.filter(e => e.id !== fromId);
+    } else {
+      const orig = ORIGINAL_DATA.entries.find(e => e.id === fromId);
+      Object.assign(from, {
+        status: 'Planned',
+        actualDate: '',
+        actualMiles: orig?.plannedMiles ?? from.plannedMiles ?? null,
+        runTime: '', avgHr: '', avgCadence: '', elevationGainFt: '',
+        shoe: orig?.shoe || '', source: '', notes: '',
+      });
+      delete from.stravaActivityId;
+    }
+
+    // Fill the target slot with the run data
+    Object.assign(to, run);
+
+    saveState();
+    renderAll();
+  }
+
   function confirmDelete(id) {
     const e = state.entries.find(x => x.id === id);
     if (!e) return;
-    if (!confirm(`Delete this entry?\n\n${e.session} on ${fmtDateLong(e.plannedDate)}`)) return;
-    state.entries = state.entries.filter(x => x.id !== id);
-    saveState();
-    renderAll();
-    toast('Run deleted');
+    const isAdHoc = e.id && e.id.startsWith('cloud_');
+    if (isAdHoc) {
+      if (!confirm(`Delete this entry?\n\n${e.session} on ${fmtDateLong(e.plannedDate)}`)) return;
+      state.entries = state.entries.filter(x => x.id !== id);
+      saveState();
+      renderAll();
+      toast('Run deleted');
+    } else {
+      // Planned slot — reset to Planned rather than permanently deleting
+      if (!confirm(`Clear this run's data and reset to Planned?\n\n${e.session} on ${fmtDateLong(e.plannedDate)}`)) return;
+      const idx = state.entries.findIndex(x => x.id === id);
+      if (idx === -1) return;
+      const orig = ORIGINAL_DATA.entries.find(x => x.id === id);
+      state.entries[idx] = orig
+        ? { ...orig, status: 'Planned', actualDate: '', actualMiles: orig.plannedMiles || null, runTime: '', avgHr: '', avgCadence: '', elevationGainFt: '', source: '', notes: '', stravaActivityId: undefined }
+        : { ...e, status: 'Planned', actualDate: '', runTime: '', avgHr: '', avgCadence: '', elevationGainFt: '', source: '', notes: '', stravaActivityId: undefined };
+      saveState();
+      renderAll();
+      toast('Run reset to Planned');
+    }
   }
 
   // ============================ Modal: Run editor ============================
@@ -5760,6 +5916,48 @@ kbd {
     form.appendChild(field('Source', fSource));
     form.appendChild(field('Status', fStatus));
     form.appendChild(field('Notes', fNotes, true));
+
+    // Reassign section — visible for any completed Strava run so the user can
+    // correct an automatic match that landed on the wrong plan slot.
+    if (!isNew && e.source === 'Strava' && entryIsCompleted(e)) {
+      const runDate = parseDateLocal(e.actualDate || e.plannedDate);
+      const candidates = runDate ? state.entries.filter(slot => {
+        if (slot.id === e.id) return false;
+        if (entryIsCross(slot)) return false;
+        const sd = parseDateLocal(slot.plannedDate);
+        if (!sd) return false;
+        return Math.abs(Math.round((runDate - sd) / 86400000)) <= 5;
+      }) : [];
+
+      if (candidates.length > 0) {
+        const fReassign = el('select', { class: 'select' });
+        fReassign.appendChild(el('option', { value: '' }, '— pick a slot —'));
+        candidates.forEach(slot => {
+          const label = `${fmtMonthDay(slot.plannedDate)} · ${slot.session} · ${slot.plannedMiles || '?'} mi planned` +
+            (entryIsCompleted(slot) ? ' (currently filled)' : ' (open)');
+          fReassign.appendChild(el('option', { value: slot.id }, label));
+        });
+
+        const btnMove = el('button', { class: 'btn btn-ghost', type: 'button' }, 'Move to this slot');
+        btnMove.addEventListener('click', () => {
+          if (!fReassign.value) { toast('Pick a slot first', 'warn'); return; }
+          const target = state.entries.find(x => x.id === fReassign.value);
+          if (!target) return;
+          const warn = entryIsCompleted(target)
+            ? `\n\nWarning: that slot already has data — it will be overwritten.` : '';
+          if (!confirm(`Move this run to:\n${target.session} on ${fmtDateLong(target.plannedDate)}?${warn}`)) return;
+          reassignRunToSlot(e.id, fReassign.value);
+          closeRunModal();
+          toast('Run reassigned');
+        });
+
+        const row = el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' });
+        row.appendChild(fReassign);
+        row.appendChild(btnMove);
+        form.appendChild(field('Reassign to plan slot', row, true,
+          'Move this Strava run to a different plan slot if the auto-match was wrong. The current slot will be reset to Planned.'));
+      }
+    }
 
     body.appendChild(form);
     dlg.appendChild(body);
@@ -6039,7 +6237,7 @@ kbd {
       const cfg = CloudSync.getConfig();
       cfg.endpoint = v.trim();
       CloudSync.setConfig(cfg);
-    }, 'text', 'e.g. https://your-site.netlify.app/.netlify/functions'));
+    }, 'text', 'e.g. https://your-site.vercel.app/api'));
     cloudSec.appendChild(buildField('Shared secret token', cloudCfg.token || '', v => {
       const cfg = CloudSync.getConfig();
       cfg.token = v.trim();
@@ -6066,12 +6264,11 @@ kbd {
     });
     const syncNowBtn = el('button', { class: 'btn btn-primary', html: ICONS.sync + '<span>Sync now</span>' });
     syncNowBtn.addEventListener('click', async () => {
-      if (!CloudSync.isEnabled()) {
-        toast('Enable sync first', 'error');
-        return;
-      }
       syncNowBtn.disabled = true;
-      const result = await CloudSync.pullAndMerge();
+      const planStart = state.entries.length
+        ? state.entries.reduce((m, e) => e.plannedDate && e.plannedDate < m ? e.plannedDate : m, '9999-99-99')
+        : null;
+      const result = await CloudSync.pullAndMerge(planStart, { force: true });
       syncNowBtn.disabled = false;
       if (result === null) {
         toast('Sync failed', 'error');
@@ -6160,27 +6357,56 @@ kbd {
       el('button', { class: 'icon-btn', html: ICONS.x, onClick: () => m.classList.remove('show') })
     ));
 
+    const readOnlyUrl = location.origin + location.pathname + '?mode=read';
     const body = el('div', { class: 'modal-body' });
+
+    // ── Primary: read-only share link ──
+    const linkInput = el('input', {
+      class: 'input',
+      type: 'text',
+      value: readOnlyUrl,
+      readOnly: '',
+      style: 'font-family:var(--font-mono);font-size:12px;flex:1;min-width:0'
+    });
+    linkInput.addEventListener('focus', () => linkInput.select());
+
+    const copyBtn = el('button', { class: 'btn btn-primary' }, 'Copy link');
+    let copyTimer;
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(readOnlyUrl);
+        copyBtn.textContent = 'Copied!';
+        clearTimeout(copyTimer);
+        copyTimer = setTimeout(() => { copyBtn.textContent = 'Copy link'; }, 2000);
+      } catch {
+        linkInput.select();
+        document.execCommand('copy');
+        copyBtn.textContent = 'Copied!';
+        clearTimeout(copyTimer);
+        copyTimer = setTimeout(() => { copyBtn.textContent = 'Copy link'; }, 2000);
+      }
+    });
+
+    const linkRow = el('div', { style: 'display:flex;gap:8px;align-items:center' });
+    linkRow.appendChild(linkInput);
+    linkRow.appendChild(copyBtn);
+
     body.appendChild(el('div', { class: 'settings-section' },
-      el('h4', {}, 'View modes'),
-      el('div', { class: 'section-help' }, 'Open this app in different modes by appending a URL parameter.'),
-      el('div', { style: { display: 'grid', gap: '10px' } },
-        modeRow('Owner (editable)', '?mode=owner', 'Default. Edits save to your browser.'),
-        modeRow('Read-only viewer', '?mode=read', 'Hides edit controls. Anyone you share the file with sees your data without being able to change it.'),
-        modeRow('Template', '?mode=template', 'Plan and structure with no logged runs. New users save their own data locally.'),
-      )
+      el('h4', {}, 'Read-only link'),
+      el('div', { class: 'section-help', style: 'margin-bottom:10px' },
+        'Share this link with anyone who wants to follow your training. They can see everything — your plan, completed runs, metrics — but cannot make any changes. Your runs sync automatically whenever they open the link.'
+      ),
+      linkRow
     ));
+
+    // ── Secondary: data export ──
     body.appendChild(el('div', { class: 'settings-section' },
-      el('h4', {}, 'Shareable HTML snapshot'),
-      el('div', { class: 'section-help' }, 'Bake your current data into a fresh HTML file. Upload it anywhere static (GitHub Pages, Netlify, Cloudflare Pages) to share a live URL.'),
-      el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '10px' } },
-        el('button', { class: 'btn btn-primary', onClick: exportShareableSnapshot, html: ICONS.download + '<span>Export shareable HTML</span>' })
+      el('h4', {}, 'Export data'),
+      el('div', { class: 'section-help', style: 'margin-bottom:10px' }, 'Download your data for backup or analysis.'),
+      el('div', { style: 'display:flex;flex-wrap:wrap;gap:10px' },
+        el('button', { class: 'btn btn-ghost', onClick: exportCSV, html: ICONS.download + '<span>Export CSV</span>' }),
+        el('button', { class: 'btn btn-ghost', onClick: exportJSON, html: ICONS.download + '<span>Export JSON backup</span>' })
       )
-    ));
-    body.appendChild(el('div', { class: 'settings-section' },
-      el('h4', {}, 'Owner edit key'),
-      el('div', { class: 'section-help' }, 'Set an owner key here. The exported HTML will require ?mode=owner&key=YOUR_KEY for editing; without it, viewers get the read-only experience.'),
-      buildField('Owner key (used for ?key= in URL)', localStorage.getItem(OWNER_KEY) || '', v => { try { localStorage.setItem(OWNER_KEY, v); toast('Owner key saved'); } catch {} }, 'text', 'Treat this like a password. Keep it private.')
     ));
 
     dlg.appendChild(body);
@@ -6189,26 +6415,9 @@ kbd {
     ));
     m.appendChild(dlg);
     m.classList.add('show');
-  }
 
-  function modeRow(title, suffix, help) {
-    const url = location.origin + location.pathname + suffix;
-    const row = el('div', { style: { background: 'var(--bg-elev-2)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '12px 14px' } });
-    row.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-        <div>
-          <div style="font-weight:500">${title}</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${help}</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <code style="font-family:var(--font-mono);font-size:12px;background:var(--bg-elev-3);padding:6px 10px;border-radius:6px">${suffix}</code>
-        </div>
-      </div>`;
-    const btn = el('button', { class: 'btn btn-ghost', style: { marginTop: '8px' }, onClick: async () => {
-      try { await navigator.clipboard.writeText(url); toast('Copied: ' + suffix); } catch { toast('Copy failed', 'error'); }
-    } }, 'Copy URL');
-    row.appendChild(btn);
-    return row;
+    // Auto-select the URL on open for easy manual copy on devices without clipboard API
+    setTimeout(() => linkInput.select(), 50);
   }
 
   // ============================ Import / export ============================
@@ -6895,10 +7104,10 @@ kbd {
   // ============================ Floating Action Button ============================
   function renderFAB() {
     let fab = $('.fab');
-    let syncFab = $('.fab-sync');
+    // Remove any leftover sync FAB from old builds
+    $('.fab-sync')?.remove();
     if (mode !== 'owner') {
       if (fab) fab.remove();
-      if (syncFab) syncFab.remove();
       return;
     }
     if (!fab) {
@@ -6910,39 +7119,6 @@ kbd {
         html: ICONS.plus
       });
       document.body.appendChild(fab);
-    }
-    // Sync button — only renders when cloud sync is configured
-    if (CloudSync.isEnabled()) {
-      if (!syncFab) {
-        syncFab = el('button', {
-          class: 'fab-sync',
-          'aria-label': 'Sync from cloud',
-          title: 'Pull latest runs from cloud',
-          onClick: async () => {
-            syncFab.classList.add('is-syncing');
-            try {
-              const result = await CloudSync.pullAndMerge();
-              if (result === null) {
-                toast('Sync failed — check endpoint and token in Settings', 'error');
-              } else if (result.added === 0 && result.updated === 0) {
-                toast('Already up to date');
-              } else {
-                renderAll();
-                const parts = [];
-                if (result.added) parts.push(`${result.added} new`);
-                if (result.updated) parts.push(`${result.updated} filled`);
-                toast(`Synced: ${parts.join(', ')}`);
-              }
-            } finally {
-              syncFab.classList.remove('is-syncing');
-            }
-          },
-          html: ICONS.sync || ICONS.share
-        });
-        document.body.appendChild(syncFab);
-      }
-    } else if (syncFab) {
-      syncFab.remove();
     }
   }
 
@@ -7046,6 +7222,31 @@ kbd {
     if (mode === 'read') document.body.classList.add('read-only');
 
     state = loadState();
+
+    // Restore any plan entries that were fully deleted from state but still exist in ORIGINAL_DATA
+    if (mode === 'owner') {
+      const stateIds = new Set(state.entries.map(e => e.id));
+      let restored = 0;
+      for (const orig of ORIGINAL_DATA.entries) {
+        if (!orig.id.startsWith('cloud_') && !stateIds.has(orig.id)) {
+          state.entries.push({
+            ...orig,
+            status: 'Planned',
+            actualDate: '',
+            actualMiles: orig.plannedMiles || null,
+            runTime: '',
+            avgHr: '',
+            avgCadence: '',
+            elevationGainFt: '',
+            source: '',
+            notes: '',
+          });
+          restored++;
+        }
+      }
+      if (restored) { saveState(); }
+    }
+
     // Backfill new fields if missing
     state.appSettings = state.appSettings || {};
     if (state.appSettings.showCrossTraining == null) state.appSettings.showCrossTraining = false;
@@ -7058,23 +7259,13 @@ kbd {
     renderAll();
     bindKeyboardShortcuts();
 
-    // Cloud sync: full Strava reconciliation on every page load.
-    // Passes the training plan start date so strava-sync fetches the whole window.
-    if (CloudSync.isEnabled()) {
-      const planStart = state.entries.length
-        ? state.entries.reduce((m, e) => e.plannedDate && e.plannedDate < m ? e.plannedDate : m, '9999-99-99')
-        : null;
-      CloudSync.pullAndMerge(planStart).then(result => {
-        if (result && (result.added > 0 || result.updated > 0 || result.removed > 0)) {
-          renderAll();
-          const parts = [];
-          if (result.added) parts.push(`${result.added} new run${result.added === 1 ? '' : 's'}`);
-          if (result.updated) parts.push(`${result.updated} slot${result.updated === 1 ? '' : 's'} filled`);
-          if (result.removed) parts.push(`${result.removed} removed`);
-          toast(`Strava sync: ${parts.join(', ')}`);
-        }
-      }).catch(err => console.warn('Cloud sync error:', err));
-    }
+    // On page load: read the blob only (cheap, no Strava API calls).
+    // Full Strava reconciliation happens via the "Sync from Strava" button in the header.
+    CloudSync.pullAndMerge(null).then(result => {
+      if (result && (result.added > 0 || result.updated > 0 || result.removed > 0)) {
+        renderAll();
+      }
+    }).catch(err => console.warn('Cloud sync error:', err));
 
     // Resize-aware chart redraws
     let rt;
