@@ -3179,8 +3179,16 @@ kbd {
   const STORAGE_KEY = 'rtgm.state.v2';
   const TEMPLATE_KEY = 'rtgm.template.v2';
   const OWNER_KEY = 'rtgm.ownerKey.v2';
+  const OWNER_HASH_KEY = 'rtgm.ownerHash';
+  const OWNER_SESSION_KEY = 'rtgm.ownerSession';
+  const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-  // Mode resolution from URL: ?mode=read | ?mode=template | ?mode=owner&key=...
+  async function sha256hex(str) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // Mode resolution from URL: ?mode=read | ?mode=template | ?key=PASSPHRASE
   const params = new URLSearchParams(location.search);
   const requestedMode = (params.get('mode') || '').toLowerCase();
   const ownerKeyParam = params.get('key') || '';
@@ -3305,19 +3313,40 @@ kbd {
   }
 
   // ============================ Mode + persistence ============================
-  function detectMode() {
+  async function detectMode() {
     if (requestedMode === 'template') return 'template';
     if (requestedMode === 'read') return 'read';
-    // owner: must either match stored ownerKey, or there's no owner key set yet
-    const storedKey = localStorage.getItem(OWNER_KEY) || '';
-    if (requestedMode === 'owner') {
-      if (!storedKey || storedKey === ownerKeyParam) return 'owner';
-      // wrong key → fall back to read
-      return 'read';
+
+    const ownerHash = localStorage.getItem(OWNER_HASH_KEY) || '';
+
+    // No passphrase configured — anyone on this device gets owner (backward compat)
+    if (!ownerHash) return 'owner';
+
+    // Valid 30-day session from a previous key verification
+    try {
+      const session = JSON.parse(localStorage.getItem(OWNER_SESSION_KEY) || 'null');
+      if (session && session.hash === ownerHash && Date.now() < session.expiry) return 'owner';
+    } catch {}
+
+    // ?key=PASSPHRASE in URL — hash it and compare
+    if (ownerKeyParam) {
+      const keyHash = await sha256hex(ownerKeyParam);
+      if (keyHash === ownerHash) {
+        localStorage.setItem(OWNER_SESSION_KEY, JSON.stringify({
+          hash: ownerHash,
+          expiry: Date.now() + SESSION_TTL_MS,
+        }));
+        // Clean key from URL without reloading
+        const clean = new URL(location.href);
+        clean.searchParams.delete('key');
+        clean.searchParams.delete('mode');
+        history.replaceState(null, '', clean.toString());
+        return 'owner';
+      }
     }
-    // No mode param: default to owner if no protection or stored key matches a previously-saved key in URL
-    if (!storedKey) return 'owner';
-    return 'owner'; // local visit by owner
+
+    // Passphrase is set but no valid credential supplied → read-only
+    return 'read';
   }
 
   // ============================ Cloud Sync ============================
@@ -6286,6 +6315,44 @@ kbd {
 
     paneData.appendChild(cloudSec);
 
+    // ── Owner passphrase ──
+    const passSec = el('div', { class: 'settings-section' });
+    passSec.appendChild(el('h4', {}, 'Owner passphrase'));
+    const currentHash = localStorage.getItem(OWNER_HASH_KEY) || '';
+    passSec.appendChild(el('div', { class: 'section-help' },
+      currentHash
+        ? '🔒 Protection active. Anyone visiting ?mode=owner without your passphrase gets read-only access.'
+        : '⚠️ No passphrase set — anyone who edits the URL can enter owner mode. Set a passphrase to lock it down.'
+    ));
+    const passInput = el('input', { class: 'input', type: 'password', placeholder: currentHash ? 'Enter new passphrase to change' : 'Set a passphrase' });
+    passSec.appendChild(passInput);
+    const passActions = el('div', { style: { display: 'flex', gap: '8px', marginTop: '8px' } });
+    const passSetBtn = el('button', { class: 'btn btn-primary' }, 'Set passphrase');
+    passSetBtn.addEventListener('click', async () => {
+      const val = passInput.value.trim();
+      if (!val) { toast('Enter a passphrase first', 'error'); return; }
+      const hash = await sha256hex(val);
+      localStorage.setItem(OWNER_HASH_KEY, hash);
+      // Save a fresh session so current device stays in owner mode
+      localStorage.setItem(OWNER_SESSION_KEY, JSON.stringify({ hash, expiry: Date.now() + SESSION_TTL_MS }));
+      passInput.value = '';
+      toast('Passphrase set — share your link as: ' + location.origin + '?key=' + encodeURIComponent(val));
+    });
+    passActions.appendChild(passSetBtn);
+    if (currentHash) {
+      const passClearBtn = el('button', { class: 'btn btn-danger' }, 'Remove passphrase');
+      passClearBtn.addEventListener('click', () => {
+        if (!confirm('Remove passphrase protection? Anyone with the URL can enter owner mode.')) return;
+        localStorage.removeItem(OWNER_HASH_KEY);
+        localStorage.removeItem(OWNER_SESSION_KEY);
+        toast('Passphrase removed');
+        m.classList.remove('show');
+      });
+      passActions.appendChild(passClearBtn);
+    }
+    passSec.appendChild(passActions);
+    paneData.appendChild(passSec);
+
     paneData.appendChild(el('div', { class: 'settings-section' },
       el('h4', {}, 'Reset & template'),
       el('div', { class: 'section-help' }, 'These actions cannot be undone. Export a backup first.'),
@@ -6397,6 +6464,17 @@ kbd {
         'Share this link with anyone who wants to follow your training. They can see everything — your plan, completed runs, metrics — but cannot make any changes. Your runs sync automatically whenever they open the link.'
       ),
       linkRow
+    ));
+
+    // ── Owner access hint ──
+    const ownerHashNow = localStorage.getItem(OWNER_HASH_KEY) || '';
+    body.appendChild(el('div', { class: 'settings-section' },
+      el('h4', {}, 'Owner access'),
+      el('div', { class: 'section-help' },
+        ownerHashNow
+          ? 'To open in owner mode on another device, add ?key=YOUR_PASSPHRASE to the URL. The passphrase is set in Settings → Owner passphrase.'
+          : 'No passphrase set. Anyone can enter owner mode by editing the URL. Set one in Settings → Owner passphrase.'
+      )
     ));
 
     // ── Secondary: data export ──
@@ -7210,14 +7288,14 @@ kbd {
     renderFAB();
   }
 
-  function init() {
+  async function init() {
     // Pull stored theme
     try {
       const t = localStorage.getItem('rtgm.theme');
       if (t) document.body.setAttribute('data-theme', t);
     } catch {}
 
-    mode = detectMode();
+    mode = await detectMode();
     if (mode === 'read' || mode === 'template') document.body.classList.add('read-only-context');
     if (mode === 'read') document.body.classList.add('read-only');
 
