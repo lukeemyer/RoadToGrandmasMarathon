@@ -1,4 +1,5 @@
-import { kv } from "@vercel/kv";
+import { Redis } from "@upstash/redis";
+const kv = Redis.fromEnv();
 
 function pad2(n) {
   return String(n).padStart(2, "0");

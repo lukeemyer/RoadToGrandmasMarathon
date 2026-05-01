@@ -4,7 +4,7 @@
   "description": "Marathon training tracker with Strava auto-sync via Vercel Functions",
   "type": "module",
   "dependencies": {
-    "@vercel/kv": "^3.0.0"
+    "@upstash/redis": "^1.34.0"
   },
   "devDependencies": {
     "vercel": "^44.0.0"
