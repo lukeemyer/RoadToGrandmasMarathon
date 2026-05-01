@@ -7259,13 +7259,7 @@ kbd {
     renderAll();
     bindKeyboardShortcuts();
 
-    // On page load: read the blob only (cheap, no Strava API calls).
-    // Full Strava reconciliation happens via the "Sync from Strava" button in the header.
-    CloudSync.pullAndMerge(null).then(result => {
-      if (result && (result.added > 0 || result.updated > 0 || result.removed > 0)) {
-        renderAll();
-      }
-    }).catch(err => console.warn('Cloud sync error:', err));
+    // No auto-sync on page load — user controls sync explicitly via "Sync with Strava" button.
 
     // Resize-aware chart redraws
     let rt;
