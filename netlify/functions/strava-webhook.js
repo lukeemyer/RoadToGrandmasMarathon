@@ -100,7 +100,7 @@ async function processEvent(event) {
   console.log(`strava-webhook: stored activity ${run.stravaActivityId} (${run.actualDate} ${run.actualMiles}mi)`);
 }
 
-export default async function handler(req) {
+export default async function handler(req, context) {
   // GET — Strava webhook verification handshake
   if (req.method === "GET") {
     const url = new URL(req.url);
@@ -126,12 +126,18 @@ export default async function handler(req) {
       return new Response("OK", { status: 200 });
     }
 
-    // Return 200 immediately; process async so we don't time out
-    const responsePromise = new Response("OK", { status: 200 });
-    processEvent(event).catch((e) =>
+    // context.waitUntil keeps the function alive after the response is sent,
+    // preventing Lambda from freezing the process mid-fetch/mid-write.
+    const work = processEvent(event).catch((e) =>
       console.error("strava-webhook processEvent error:", e)
     );
-    return responsePromise;
+    if (context?.waitUntil) {
+      context.waitUntil(work);
+    } else {
+      await work;
+    }
+
+    return new Response("OK", { status: 200 });
   }
 
   return new Response("Method not allowed", { status: 405 });
