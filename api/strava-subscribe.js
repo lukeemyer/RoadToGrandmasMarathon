@@ -45,16 +45,11 @@ export default async function handler(req, res) {
     const id = req.query.id;
     if (!id) { res.status(400).json({ error: "Missing id param" }); return; }
 
-    const body = new URLSearchParams({
-      client_id: process.env.STRAVA_CLIENT_ID,
-      client_secret: process.env.STRAVA_CLIENT_SECRET,
-    });
-
-    const r = await fetch(`https://www.strava.com/api/v3/push_subscriptions/${id}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
+    // Strava DELETE requires credentials as query params, not body
+    const r = await fetch(
+      `https://www.strava.com/api/v3/push_subscriptions/${id}?client_id=${process.env.STRAVA_CLIENT_ID}&client_secret=${process.env.STRAVA_CLIENT_SECRET}`,
+      { method: "DELETE" }
+    );
 
     if (r.status === 204) { res.status(200).json({ deleted: true }); return; }
     const data = await r.json().catch(() => ({}));
