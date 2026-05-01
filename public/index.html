@@ -3390,11 +3390,12 @@ kbd {
       cloudRuns.forEach(cr => {
         if (!cr || !cr.actualDate) return;
 
-        // Skip if we already have an entry with this actualDate + miles match
+        // Skip if already merged — prefer stravaActivityId match, fall back to date+miles+time
         const existing = state.entries.find(e =>
-          e.actualDate === cr.actualDate &&
-          Math.abs((parseFloat(e.actualMiles) || 0) - (parseFloat(cr.actualMiles) || 0)) < 0.05 &&
-          (e.runTime === cr.runTime || (e.source && e.source.includes('Apple')))
+          (cr.stravaActivityId && e.stravaActivityId === cr.stravaActivityId) ||
+          (e.actualDate === cr.actualDate &&
+            Math.abs((parseFloat(e.actualMiles) || 0) - (parseFloat(cr.actualMiles) || 0)) < 0.05 &&
+            (e.runTime === cr.runTime || (e.source && e.source.includes('Apple'))))
         );
         if (existing) return;
 
@@ -3459,8 +3460,9 @@ kbd {
     // Uses stravaActivityId when available, falls back to date+miles match.
     function reconcileStravaDeletions(cloudRuns) {
       const byId = new Map(cloudRuns.filter(r => r.stravaActivityId).map(r => [r.stravaActivityId, r]));
+      // Use 2 decimal places so 4.00 mi (deleted test) !== 4.01 mi (real run)
       const byDateMiles = new Map(cloudRuns.filter(r => r.actualDate).map(r =>
-        [`${r.actualDate}_${parseFloat(r.actualMiles || 0).toFixed(1)}`, r]
+        [`${r.actualDate}_${parseFloat(r.actualMiles || 0).toFixed(2)}`, r]
       ));
       let removed = 0;
       state.entries = state.entries.reduce((acc, entry) => {
@@ -3468,7 +3470,7 @@ kbd {
         const stillExists =
           (entry.stravaActivityId && byId.has(entry.stravaActivityId)) ||
           (!entry.stravaActivityId && entry.actualDate &&
-            byDateMiles.has(`${entry.actualDate}_${parseFloat(entry.actualMiles || 0).toFixed(1)}`));
+            byDateMiles.has(`${entry.actualDate}_${parseFloat(entry.actualMiles || 0).toFixed(2)}`));
         if (stillExists) { acc.push(entry); return acc; }
         removed++;
         if (entry.id && entry.id.startsWith('cloud_')) {
