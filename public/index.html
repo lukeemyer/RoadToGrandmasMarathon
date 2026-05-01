@@ -6247,8 +6247,8 @@ kbd {
     const testBtn = el('button', { class: 'btn', html: ICONS.cloud + '<span>Test connection</span>' });
     testBtn.addEventListener('click', async () => {
       const cfg = CloudSync.getConfig();
-      if (!cfg.endpoint || !cfg.token) {
-        toast('Set endpoint and token first', 'error');
+      if (!cfg.token) {
+        toast('Set shared secret token first', 'error');
         return;
       }
       testBtn.disabled = true;
