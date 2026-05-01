@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setup — Marathon Training Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400..600&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-base: #0a0d14;
+      --bg-elev-1: #11151f;
+      --bg-elev-2: #161b27;
+      --bg-elev-3: #1c2230;
+      --border-subtle: rgba(255,255,255,0.06);
+      --border-stronger: rgba(255,255,255,0.12);
+      --text-primary: #f3f5f8;
+      --text-secondary: #aab2c0;
+      --text-muted: #6e7787;
+      --accent: #ff8a3d;
+      --accent-soft: rgba(255,138,61,0.14);
+      --accent-glow: rgba(255,138,61,0.35);
+      --success: #7ce0a0;
+      --success-soft: rgba(124,224,160,0.14);
+      --warn: #f5c54a;
+      --warn-soft: rgba(245,197,74,0.14);
+      --danger: #ff6b6b;
+      --danger-soft: rgba(255,107,107,0.14);
+      --font-display: 'Fraunces', Georgia, serif;
+      --font-body: 'Geist', system-ui, sans-serif;
+      --font-mono: 'Geist Mono', monospace;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-base);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* Header */
+    .site-header {
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .site-header .logo {
+      font-family: var(--font-display);
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .site-header .badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid rgba(255,138,61,0.25);
+      padding: 0.2em 0.6em;
+      border-radius: 20px;
+    }
+
+    /* Layout */
+    .page {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 3rem 2rem 6rem;
+    }
+
+    .page-title {
+      font-family: var(--font-display);
+      font-size: 2.2rem;
+      font-weight: 500;
+      line-height: 1.2;
+      margin-bottom: 0.5rem;
+    }
+    .page-title em {
+      font-style: italic;
+      color: var(--accent);
+    }
+    .page-subtitle {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      margin-bottom: 2.5rem;
+    }
+
+    /* Steps */
+    .steps { display: flex; flex-direction: column; gap: 0; }
+
+    .step {
+      position: relative;
+      display: flex;
+      gap: 1.25rem;
+    }
+
+    /* Connector line */
+    .step:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: 18px;
+      top: 52px;
+      bottom: -16px;
+      width: 2px;
+      background: var(--border-stronger);
+      z-index: 0;
+    }
+    .step.complete:not(:last-child)::after {
+      background: rgba(124,224,160,0.3);
+    }
+
+    .step-icon {
+      flex-shrink: 0;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 2px solid var(--border-stronger);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-elev-1);
+      position: relative;
+      z-index: 1;
+      margin-top: 7px;
+      transition: all 0.2s;
+    }
+    .step.complete .step-icon {
+      border-color: var(--success);
+      color: var(--success);
+      background: var(--success-soft);
+    }
+    .step.active .step-icon {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: 0 0 0 4px rgba(255,138,61,0.12);
+    }
+
+    .step-body {
+      flex: 1;
+      padding-bottom: 2rem;
+    }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding-top: 0.5rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .step-header:hover .step-title { color: var(--text-primary); }
+
+    .step-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      transition: color 0.15s;
+    }
+    .step.active .step-title,
+    .step.complete .step-title {
+      color: var(--text-primary);
+    }
+
+    .step-status-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      padding: 0.15em 0.55em;
+      border-radius: 20px;
+      display: none;
+    }
+    .step.complete .step-status-badge {
+      display: inline-block;
+      background: var(--success-soft);
+      color: var(--success);
+      border: 1px solid rgba(124,224,160,0.25);
+    }
+    .step.active .step-status-badge {
+      display: inline-block;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid rgba(255,138,61,0.25);
+    }
+
+    .step-content {
+      display: none;
+      margin-top: 0.75rem;
+    }
+    .step.active .step-content,
+    .step.open .step-content {
+      display: block;
+    }
+
+    /* Cards inside steps */
+    .card {
+      background: var(--bg-elev-1);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .card p { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.75rem; }
+    .card p:last-child { margin-bottom: 0; }
+
+    /* Instruction list */
+    .instruction-list {
+      list-style: none;
+      counter-reset: inst;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .instruction-list li {
+      counter-increment: inst;
+      display: flex;
+      gap: 0.75rem;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+    .instruction-list li::before {
+      content: counter(inst);
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--bg-elev-3);
+      border: 1px solid var(--border-stronger);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .instruction-list li a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .instruction-list li a:hover { text-decoration: underline; }
+
+    /* Code/env var blocks */
+    .env-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .env-table tr {
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .env-table tr:last-child { border-bottom: none; }
+    .env-table td {
+      padding: 0.55rem 0.5rem;
+      vertical-align: top;
+    }
+    .env-table td:first-child {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--accent);
+      white-space: nowrap;
+      padding-right: 1rem;
+      width: 1%;
+    }
+    .env-table td:last-child {
+      color: var(--text-secondary);
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.82em;
+      background: var(--bg-elev-3);
+      border: 1px solid var(--border-stronger);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+      color: var(--text-primary);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.25rem;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: #e67a2a; }
+    .btn-primary:disabled {
+      background: var(--bg-elev-3);
+      color: var(--text-muted);
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: var(--bg-elev-2);
+      color: var(--text-primary);
+      border: 1px solid var(--border-stronger);
+    }
+    .btn-secondary:hover { background: var(--bg-elev-3); }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-stronger);
+    }
+    .btn-ghost:hover { color: var(--text-primary); border-color: var(--accent); }
+    .btn-success {
+      background: var(--success-soft);
+      color: var(--success);
+      border: 1px solid rgba(124,224,160,0.3);
+      cursor: default;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+
+    /* Status indicators */
+    .status-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.875rem;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--text-muted);
+    }
+    .status-dot.ok { background: var(--success); box-shadow: 0 0 0 3px rgba(124,224,160,0.2); }
+    .status-dot.fail { background: var(--danger); box-shadow: 0 0 0 3px rgba(255,107,107,0.2); }
+    .status-dot.loading {
+      background: var(--warn);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+    .status-label { color: var(--text-secondary); }
+    .status-label strong { color: var(--text-primary); font-weight: 500; }
+
+    /* Input */
+    .input-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      flex-wrap: wrap;
+    }
+    input[type=text], input[type=password] {
+      flex: 1;
+      min-width: 200px;
+      background: var(--bg-elev-2);
+      border: 1px solid var(--border-stronger);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      padding: 0.6rem 0.75rem;
+      outline: none;
+    }
+    input[type=text]:focus, input[type=password]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(255,138,61,0.12);
+    }
+
+    /* Alert box */
+    .alert {
+      border-radius: var(--radius-sm);
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      margin-top: 0.75rem;
+      display: none;
+    }
+    .alert.show { display: block; }
+    .alert-success { background: var(--success-soft); color: var(--success); border: 1px solid rgba(124,224,160,0.3); }
+    .alert-error { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(255,107,107,0.3); }
+    .alert-warn { background: var(--warn-soft); color: var(--warn); border: 1px solid rgba(245,197,74,0.3); }
+
+    /* Check off button */
+    .check-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      background: none;
+      border: 1px dashed var(--border-stronger);
+      border-radius: 6px;
+      padding: 0.35rem 0.75rem;
+      margin-top: 1rem;
+      transition: all 0.15s;
+    }
+    .check-btn:hover { color: var(--success); border-color: rgba(124,224,160,0.4); }
+    .step.complete .check-btn { display: none; }
+
+    /* Done banner */
+    #done-banner {
+      display: none;
+      background: linear-gradient(135deg, rgba(124,224,160,0.12), rgba(94,184,255,0.08));
+      border: 1px solid rgba(124,224,160,0.3);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      text-align: center;
+      margin-top: 1rem;
+    }
+    #done-banner h2 {
+      font-family: var(--font-display);
+      font-size: 1.8rem;
+      font-weight: 500;
+      color: var(--success);
+      margin-bottom: 0.5rem;
+    }
+    #done-banner p { color: var(--text-secondary); margin-bottom: 1.25rem; }
+    #done-banner.show { display: block; }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <span class="logo">Marathon Training Tracker</span>
+  <span class="badge">Setup Wizard</span>
+</header>
+
+<main class="page">
+  <h1 class="page-title">Set up your own<br><em>training tracker</em></h1>
+  <p class="page-subtitle">Follow these steps to deploy your own copy connected to your Strava account. Takes about 15 minutes.</p>
+
+  <div class="steps" id="steps">
+
+    <!-- Step 1: Fork -->
+    <div class="step active" id="step-fork" data-step="fork">
+      <div class="step-icon">1</div>
+      <div class="step-body">
+        <div class="step-header" onclick="toggleStep('fork')">
+          <span class="step-title">Fork the repository</span>
+          <span class="step-status-badge">Done</span>
+        </div>
+        <div class="step-content">
+          <div class="card">
+            <p>Fork the GitHub repo to get your own copy you can customize and deploy.</p>
+            <ol class="instruction-list">
+              <li>Open the repository on GitHub and click <strong>Fork</strong> in the top-right corner.</li>
+              <li>Choose your personal account as the owner. Leave the repo name as-is or rename it.</li>
+              <li>Click <strong>Create fork</strong>.</li>
+            </ol>
+            <div class="btn-row">
+              <a class="btn btn-primary" href="https://github.com/lukeemyer/RoadToGrandmasMarathon/fork" target="_blank" rel="noopener">
+                Fork on GitHub &rarr;
+              </a>
+            </div>
+          </div>
+          <button class="check-btn" onclick="markDone('fork')">&#10003; I've forked the repo</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Deploy to Vercel -->
+    <div class="step" id="step-deploy" data-step="deploy">
+      <div class="step-icon">2</div>
+      <div class="step-body">
+        <div class="step-header" onclick="toggleStep('deploy')">
+          <span class="step-title">Deploy to Vercel</span>
+          <span class="step-status-badge">Done</span>
+        </div>
+        <div class="step-content">
+          <div class="card">
+            <p>Create a free Vercel account (if needed) and import your fork as a new project.</p>
+            <ol class="instruction-list">
+              <li>Go to <a href="https://vercel.com/new" target="_blank" rel="noopener">vercel.com/new</a> and sign in with GitHub.</li>
+              <li>Click <strong>Import</strong> next to your forked repo.</li>
+              <li>Leave all settings as defaults and click <strong>Deploy</strong>. The first deploy will fail — that's expected, you haven't set env vars yet.</li>
+              <li>Note your <strong>Vercel project URL</strong> (e.g. <code>your-project.vercel.app</code>).</li>
+            </ol>
+          </div>
+          <button class="check-btn" onclick="markDone('deploy')">&#10003; I've deployed to Vercel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Redis -->
+    <div class="step" id="step-redis" data-step="redis">
+      <div class="step-icon">3</div>
+      <div class="step-body">
+        <div class="step-header" onclick="toggleStep('redis')">
+          <span class="step-title">Add Upstash Redis database</span>
+          <span class="step-status-badge">Done</span>
+        </div>
+        <div class="step-content">
+          <div class="card">
+            <p>The tracker stores your runs in a small Redis database. Vercel's Upstash integration makes this free and automatic.</p>
+            <ol class="instruction-list">
+              <li>In your Vercel project, go to the <strong>Storage</strong> tab.</li>
+              <li>Click <strong>Create Database</strong> → <strong>Upstash Redis</strong>.</li>
+              <li>Choose a region close to you and click <strong>Create &amp; Continue</strong>.</li>
+              <li>Click <strong>Connect</strong> to link the database to your project. Vercel auto-adds <code>KV_REST_API_URL</code> and <code>KV_REST_API_TOKEN</code> as env vars.</li>
+            </ol>
+          </div>
+          <button class="check-btn" onclick="markDone('redis')">&#10003; I've connected Upstash Redis</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 4: Strava App -->
+    <div class="step" id="step-strava-app" data-step="strava-app">
+      <div class="step-icon">4</div>
+      <div class="step-body">
+        <div class="step-header" onclick="toggleStep('strava-app')">
+          <span class="step-title">Create a Strava API app</span>
+          <span class="step-status-badge">Done</span>
+        </div>
+        <div class="step-content">
+          <div class="card">
+            <p>You need a Strava API application to read your activity data. This is free and takes 2 minutes.</p>
+            <ol class="instruction-list">
+              <li>Go to <a href="https://www.strava.com/settings/api" target="_blank" rel="noopener">strava.com/settings/api</a>.</li>
+              <li>Fill in the application form. The fields don't matter much — use any name (e.g. "My Tracker"), category "Other", and website URL.</li>
+              <li>Set <strong>Authorization Callback Domain</strong> to your Vercel domain (e.g. <code>your-project.vercel.app</code>). No <code>https://</code>, no trailing slash.</li>
+              <li>Click <strong>Create</strong>. You'll see a <strong>Client ID</strong> and <strong>Client Secret</strong> — keep this tab open.</li>
+            </ol>
+          </div>
+          <button class="check-btn" onclick="markDone('strava-app')">&#10003; I've created a Strava app</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 5: Env Vars -->
+    <div class="step" id="step-env" data-step="env">
+      <div class="step-icon">5</div>
+      <div class="step-body">
+        <div class="step-header" onclick="toggleStep('env')">
+          <span class="step-title">Set environment variables</span>
+          <span class="step-status-badge">Done</span>
+        </div>
+        <div class="step-content">
+          <div class="card">
+            <p>In your Vercel project, go to <strong>Settings → Environment Variables</strong> and add these:</p>
+            <table class="env-table">
+              <tr>
+                <td>STRAVA_CLIENT_ID</td>
+                <td>Your Strava app's numeric Client ID</td>
+              </tr>
+              <tr>
+                <td>STRAVA_CLIENT_SECRET</td>
+                <td>Your Strava app's Client Secret</td>
+              </tr>
+              <tr>
+                <td>STRAVA_VERIFY_TOKEN</td>
+                <td>Any random string (e.g. <code>mysecrettoken123</code>). Used to verify webhook delivery.</td>
+              </tr>
+              <tr>
+                <td>SHARED_SECRET</td>
+                <td>A password for admin access to your tracker. Choose something strong.</td>
+              </tr>
+            </table>
+            <p style="margin-top: 0.75rem; font-size:0.8rem; color: var(--text-muted);">The <code>KV_REST_API_*</code> variables were added automatically when you connected Upstash in step 3.</p>
+          </div>
+          <div class="card">
+            <p><strong>After adding all variables, redeploy the project:</strong></p>
+            <ol class="instruction-list">
+              <li>In Vercel, go to the <strong>Deployments</strong> tab.</li>
+              <li>Click the three-dot menu on the latest deployment and select <strong>Redeploy</strong>.</li>
+              <li>Wait for the deployment to show <strong>Ready</strong>.</li>
+            </ol>
+          </div>
+
+          <p style="font-size:0.85rem;color:var(--text-secondary);margin-top:0.75rem;">Once deployed, click the button below to verify the environment is configured correctly:</p>
+          <div class="btn-row">
+            <button class="btn btn-secondary" onclick="checkStatus()">Check configuration</button>
+          </div>
+          <div class="status-row" id="env-status" style="display:none">
+            <div class="status-item">
+              <div class="status-dot" id="dot-env"></div>
+              <span class="status-label" id="label-env">Checking environment variables…</span>
+            </div>
+            <div class="status-item">
+              <div class="status-dot" id="dot-db"></div>
+              <span class="status-label" id="label-db">Checking database connection…</span>
+            </div>
+          </div>
+          <div id="env-alert" class="alert"></div>
+          <button class="check-btn" id="check-env-done" onclick="markDone('env')" style="display:none">&#10003; Configuration looks good</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 6: Connect Strava -->
+    <div class="step" id="step-oauth" data-step="oauth">
+      <div class="step-icon">6</div>
+      <div class="step-body">
+        <div class="step-header" onclick="toggleStep('oauth')">
+          <span class="step-title">Connect your Strava account</span>
+          <span class="step-status-badge">Done</span>
+        </div>
+        <div class="step-content">
+          <div class="card">
+            <p>Authorize your tracker to read your Strava activities. This stores an access token in your Redis database.</p>
+            <p>Click the button below — you'll be redirected to Strava, asked to authorize, then brought back here.</p>
+            <div class="btn-row">
+              <button class="btn btn-primary" id="strava-oauth-btn" onclick="startStravaOAuth()">Connect Strava</button>
+            </div>
+            <div class="status-row" id="oauth-status" style="margin-top:0.75rem">
+              <div class="status-item">
+                <div class="status-dot" id="dot-oauth"></div>
+                <span class="status-label" id="label-oauth">Not connected yet</span>
+              </div>
+            </div>
+            <div id="oauth-alert" class="alert"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 7: Webhook -->
+    <div class="step" id="step-webhook" data-step="webhook">
+      <div class="step-icon">7</div>
+      <div class="step-body">
+        <div class="step-header" onclick="toggleStep('webhook')">
+          <span class="step-title">Register Strava webhook</span>
+          <span class="step-status-badge">Done</span>
+        </div>
+        <div class="step-content">
+          <div class="card">
+            <p>The webhook lets Strava push new activities to your tracker automatically — no manual syncing needed after each run.</p>
+            <p>Enter your <code>SHARED_SECRET</code> (the admin password you set in step 5), then click Register.</p>
+            <div class="input-row">
+              <input type="password" id="webhook-secret" placeholder="Enter your SHARED_SECRET…">
+              <button class="btn btn-primary" onclick="registerWebhook()">Register webhook</button>
+            </div>
+            <div class="status-row" style="margin-top:0.75rem">
+              <div class="status-item">
+                <div class="status-dot" id="dot-webhook"></div>
+                <span class="status-label" id="label-webhook">Not registered yet</span>
+              </div>
+            </div>
+            <div id="webhook-alert" class="alert"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 8: Done -->
+    <div class="step" id="step-done" data-step="done">
+      <div class="step-icon">&#10003;</div>
+      <div class="step-body">
+        <div class="step-header" onclick="toggleStep('done')">
+          <span class="step-title">You're all set</span>
+          <span class="step-status-badge">Done</span>
+        </div>
+        <div class="step-content">
+          <div id="done-banner" class="show">
+            <h2>&#127939; You're ready to run</h2>
+            <p>Your training tracker is connected to Strava. New activities will sync automatically. Head to your tracker to do an initial sync and add your training plan.</p>
+            <a class="btn btn-primary" href="/" style="display:inline-flex">Open your tracker &rarr;</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /steps -->
+</main>
+
+<script>
+  // ---- State ----
+  const STEPS = ['fork','deploy','redis','strava-app','env','oauth','webhook','done'];
+  const STORAGE_KEY = 'rtgm.setup.done';
+
+  function loadDone() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+  }
+  function saveDone(list) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  }
+
+  function markDone(step) {
+    const done = loadDone();
+    if (!done.includes(step)) done.push(step);
+    saveDone(done);
+    render();
+    const idx = STEPS.indexOf(step);
+    if (idx >= 0 && idx + 1 < STEPS.length) {
+      const next = STEPS[idx + 1];
+      const nextEl = document.getElementById('step-' + next);
+      if (nextEl) {
+        nextEl.classList.add('active');
+        toggleStep(next, true);
+        nextEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }
+
+  function toggleStep(id, forceOpen) {
+    const el = document.getElementById('step-' + id);
+    if (!el) return;
+    if (forceOpen) {
+      el.classList.add('open');
+    } else {
+      el.classList.toggle('open');
+    }
+  }
+
+  function render() {
+    const done = loadDone();
+    STEPS.forEach((s, i) => {
+      const el = document.getElementById('step-' + s);
+      if (!el) return;
+      const isDone = done.includes(s);
+      const isActive = !isDone && (i === 0 || done.includes(STEPS[i-1]));
+      el.classList.toggle('complete', isDone);
+      el.classList.toggle('active', isActive);
+      const badge = el.querySelector('.step-status-badge');
+      if (badge) badge.textContent = isDone ? 'Done' : isActive ? 'In progress' : '';
+    });
+  }
+
+  // ---- Setup check ----
+  async function checkStatus(silent) {
+    const statusDiv = document.getElementById('env-status');
+    const alertDiv = document.getElementById('env-alert');
+    const doneBtn = document.getElementById('check-env-done');
+    if (!silent) statusDiv.style.display = 'flex';
+
+    setDot('env', 'loading'); setLabel('env', 'Checking environment variables…');
+    setDot('db', 'loading'); setLabel('db', 'Checking database connection…');
+
+    let data;
+    try {
+      const r = await fetch('/api/setup-check');
+      data = await r.json();
+    } catch (e) {
+      if (!silent) {
+        setDot('env', 'fail'); setLabel('env', 'Could not reach the API');
+        setDot('db', 'fail'); setLabel('db', '—');
+        showAlert('env-alert', 'error', 'Failed to reach /api/setup-check. Make sure you are viewing this page on your Vercel deployment, not locally.');
+      }
+      return null;
+    }
+
+    setDot('env', data.envReady ? 'ok' : 'fail');
+    setLabel('env', data.envReady ? '<strong>Environment variables set</strong>' : 'Missing environment variables — check Vercel project settings');
+    setDot('db', data.dbReady ? 'ok' : 'fail');
+    setLabel('db', data.dbReady ? '<strong>Database connected</strong>' : 'Could not connect to Redis — check Upstash integration');
+
+    if (data.envReady && data.dbReady) {
+      if (!silent) {
+        showAlert('env-alert', 'success', 'Configuration looks good! You can proceed to the next step.');
+        doneBtn.style.display = 'inline-flex';
+      }
+    } else if (!silent) {
+      showAlert('env-alert', 'warn', 'Some configuration is missing. Fix the issues above and redeploy, then check again.');
+    }
+
+    // Update OAuth status
+    setDot('oauth', data.stravaConnected ? 'ok' : '');
+    setLabel('oauth', data.stravaConnected ? '<strong>Strava connected</strong> — you can skip this step' : 'Not connected yet');
+    if (data.stravaConnected) {
+      document.getElementById('strava-oauth-btn').classList.add('btn-success');
+      document.getElementById('strava-oauth-btn').textContent = '✓ Strava connected';
+      if (!loadDone().includes('oauth')) markDone('oauth');
+    }
+
+    // Update webhook status
+    setDot('webhook', data.webhookRegistered ? 'ok' : '');
+    setLabel('webhook', data.webhookRegistered ? '<strong>Webhook registered</strong> — Strava will push new activities automatically' : 'Not registered yet');
+    if (data.webhookRegistered && !loadDone().includes('webhook')) markDone('webhook');
+
+    return data;
+  }
+
+  // ---- Strava OAuth ----
+  function startStravaOAuth() {
+    const clientId = prompt('Enter your STRAVA_CLIENT_ID (the numeric ID from your Strava app):');
+    if (!clientId) return;
+    const redirect = encodeURIComponent(window.location.origin + '/api/strava-callback');
+    const scope = 'activity:read_all';
+    const url = `https://www.strava.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&response_type=code&redirect_uri=${redirect}&approval_prompt=force&scope=${scope}&state=setup`;
+    window.location.href = url;
+  }
+
+  // ---- Webhook ----
+  async function registerWebhook() {
+    const secret = document.getElementById('webhook-secret').value.trim();
+    if (!secret) {
+      showAlert('webhook-alert', 'warn', 'Please enter your SHARED_SECRET.');
+      return;
+    }
+    setDot('webhook', 'loading'); setLabel('webhook', 'Registering webhook…');
+
+    const callback = window.location.origin + '/api/strava-webhook';
+    try {
+      const r = await fetch(
+        `/api/strava-subscribe?action=create&callback=${encodeURIComponent(callback)}`,
+        { headers: { Authorization: 'Bearer ' + secret } }
+      );
+      const data = await r.json();
+      if (r.ok && (data.id || data.already_registered)) {
+        setDot('webhook', 'ok');
+        setLabel('webhook', '<strong>Webhook registered</strong> — Strava will push new activities automatically');
+        showAlert('webhook-alert', 'success', 'Webhook registered! New runs will sync automatically.');
+        markDone('webhook');
+      } else if (r.status === 401) {
+        setDot('webhook', 'fail');
+        setLabel('webhook', 'Authorization failed');
+        showAlert('webhook-alert', 'error', 'Invalid SHARED_SECRET. Check the value you set in step 5.');
+      } else {
+        const msg = data.message || data.errors?.[0]?.message || JSON.stringify(data);
+        setDot('webhook', 'fail');
+        setLabel('webhook', 'Registration failed');
+        showAlert('webhook-alert', 'error', 'Strava returned: ' + msg);
+      }
+    } catch (e) {
+      setDot('webhook', 'fail');
+      setLabel('webhook', 'Request failed');
+      showAlert('webhook-alert', 'error', e.message);
+    }
+  }
+
+  // ---- Helpers ----
+  function setDot(id, state) {
+    const el = document.getElementById('dot-' + id);
+    if (!el) return;
+    el.className = 'status-dot' + (state ? ' ' + state : '');
+  }
+  function setLabel(id, html) {
+    const el = document.getElementById('label-' + id);
+    if (el) el.innerHTML = html;
+  }
+  function showAlert(id, type, msg) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'alert show alert-' + type;
+    el.textContent = msg;
+  }
+
+  // ---- Init ----
+  render();
+
+  // Open first incomplete step
+  const done = loadDone();
+  const firstOpen = STEPS.find(s => !done.includes(s)) || 'done';
+  toggleStep(firstOpen, true);
+
+  // If returning from Strava OAuth (code param in URL)
+  if (location.search.includes('oauth=done')) {
+    history.replaceState(null, '', location.pathname);
+    checkStatus().then(data => {
+      if (data?.stravaConnected) {
+        document.getElementById('step-oauth').scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  } else {
+    // Silent background check to update indicators
+    checkStatus(true);
+  }
+</script>
+</body>
+</html>

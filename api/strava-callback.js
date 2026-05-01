@@ -91,6 +91,13 @@ export default async function handler(req, res) {
   }
 
   console.log("strava-callback: sending success response");
+
+  // If OAuth was started from the setup wizard, redirect back there
+  if (req.query?.state === "setup") {
+    res.redirect(302, "/setup?oauth=done");
+    return;
+  }
+
   res.status(200).setHeader("Content-Type", "text/html; charset=utf-8").send(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>Strava Connected</title>

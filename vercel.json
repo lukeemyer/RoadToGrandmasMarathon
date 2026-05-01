@@ -1,6 +1,7 @@
 {
   "outputDirectory": "public",
   "rewrites": [
+    { "source": "/setup", "destination": "/setup.html" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
