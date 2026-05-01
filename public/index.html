@@ -6223,9 +6223,9 @@ kbd {
     const cloudSec = el('div', { class: 'settings-section' });
     cloudSec.appendChild(el('h4', {}, 'Cloud sync (optional)'));
     cloudSec.appendChild(el('div', { class: 'section-help' },
-      'Connect a deployed Netlify backend to auto-log runs from Apple Shortcuts. ' +
-      'Leave disabled to use the app entirely offline. ' +
-      'Setup guide: deploy with Claude Code (see project README), then paste your function URL and shared secret here.'
+      'Connect the Vercel backend to auto-sync runs from Strava. ' +
+      'Leave the endpoint URL blank — it defaults to the current domain. ' +
+      'Only the shared secret token is required.'
     ));
     const cloudCfg = CloudSync.getConfig();
     cloudSec.appendChild(buildToggle('Enable cloud sync', !!cloudCfg.enabled, v => {
@@ -6242,7 +6242,7 @@ kbd {
       const cfg = CloudSync.getConfig();
       cfg.token = v.trim();
       CloudSync.setConfig(cfg);
-    }, 'password', 'Same value as SHARED_SECRET env var on Netlify'));
+    }, 'password', 'Same value as SHARED_SECRET env var on Vercel'));
 
     const testBtn = el('button', { class: 'btn', html: ICONS.cloud + '<span>Test connection</span>' });
     testBtn.addEventListener('click', async () => {
