@@ -3763,7 +3763,13 @@ kbd {
     const shoes = (state && state.shoes) || [];
     if (!shoes.length) return stravaName;
     if (shoes.some(s => s.name === stravaName)) return stravaName;
-    function tok(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean); }
+    function tok(s) {
+      return s
+        .replace(/([a-z])([A-Z])/g, '$1 $2')  // camelCase: SuperBlast → Super Blast
+        .replace(/([a-zA-Z])(\d)/g, '$1 $2')  // letter→digit: Nimbus28 → Nimbus 28
+        .replace(/(\d)([a-zA-Z])/g, '$1 $2')  // digit→letter: 3X → 3 X
+        .toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
+    }
     const stravaSet = new Set(tok(stravaName));
     let best = null, bestScore = 0;
     for (const s of shoes) {
