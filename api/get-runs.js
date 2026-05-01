@@ -1,5 +1,4 @@
 import { Redis } from "@upstash/redis";
-const kv = Redis.fromEnv();
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -16,6 +15,7 @@ export default async function handler(req) {
     return new Response("Method not allowed", { status: 405, headers: CORS });
   }
 
+  const kv = Redis.fromEnv();
   let runs = [];
   try {
     const raw = await kv.get("runs:all");

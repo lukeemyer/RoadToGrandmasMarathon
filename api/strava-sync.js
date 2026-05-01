@@ -1,5 +1,4 @@
 import { Redis } from "@upstash/redis";
-const kv = Redis.fromEnv();
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -50,7 +49,7 @@ function transform(activity, gearMap = new Map()) {
   };
 }
 
-async function getValidTokens() {
+async function getValidTokens(kv) {
   const tokens = await kv.get("runs:strava-tokens");
   if (!tokens) return null;
 
@@ -93,7 +92,7 @@ async function fetchAllRunActivities(accessToken, afterTs) {
   return runs;
 }
 
-async function fetchGearNames(accessToken, activities) {
+async function fetchGearNames(kv, accessToken, activities) {
   const gearIds = [...new Set(activities.map(a => a.gear_id).filter(Boolean))];
   if (!gearIds.length) return new Map();
 
@@ -129,12 +128,14 @@ export default async function handler(req) {
     return json({ error: "Unauthorized" }, 401);
   }
 
+  const kv = Redis.fromEnv();
+
   const url = new URL(req.url);
   const since = url.searchParams.get("since") ||
     new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const afterTs = Math.floor(new Date(since + "T00:00:00Z").getTime() / 1000);
 
-  const tokens = await getValidTokens();
+  const tokens = await getValidTokens(kv);
   if (!tokens) {
     let runs = [];
     try { const r = await kv.get("runs:all"); if (Array.isArray(r)) runs = r; } catch {}
@@ -144,7 +145,7 @@ export default async function handler(req) {
   const stravaRuns = await fetchAllRunActivities(tokens.access_token, afterTs);
   const stravaIdSet = new Set(stravaRuns.map(a => a.id));
 
-  const gearMap = await fetchGearNames(tokens.access_token, stravaRuns);
+  const gearMap = await fetchGearNames(kv, tokens.access_token, stravaRuns);
 
   let blobRuns = [];
   try {

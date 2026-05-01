@@ -1,5 +1,4 @@
 import { Redis } from "@upstash/redis";
-const kv = Redis.fromEnv();
 
 const ok = (body) =>
   new Response(body, {
@@ -14,6 +13,16 @@ const err = (msg) =>
   );
 
 export default async function handler(req) {
+  if (!process.env.UPSTASH_REDIS_REST_URL) {
+    console.error("strava-callback: UPSTASH_REDIS_REST_URL not set");
+    return err("Server misconfigured: Redis env vars missing");
+  }
+  if (!process.env.STRAVA_CLIENT_ID) {
+    console.error("strava-callback: STRAVA_CLIENT_ID not set");
+    return err("Server misconfigured: Strava env vars missing");
+  }
+
+  const kv = Redis.fromEnv();
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const error = url.searchParams.get("error");

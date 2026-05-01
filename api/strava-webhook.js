@@ -1,5 +1,4 @@
 import { Redis } from "@upstash/redis";
-const kv = Redis.fromEnv();
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -40,7 +39,7 @@ function transformActivity(activity) {
   };
 }
 
-async function refreshTokens(tokens) {
+async function refreshTokens(kv, tokens) {
   const body = new URLSearchParams({
     client_id: process.env.STRAVA_CLIENT_ID,
     client_secret: process.env.STRAVA_CLIENT_SECRET,
@@ -58,7 +57,7 @@ async function refreshTokens(tokens) {
   return updated;
 }
 
-async function processEvent(event) {
+async function processEvent(kv, event) {
   if (event.object_type !== "activity" || event.aspect_type !== "create") return;
 
   let tokens = await kv.get("runs:strava-tokens");
@@ -68,7 +67,7 @@ async function processEvent(event) {
   }
 
   if (Date.now() / 1000 >= tokens.expires_at) {
-    tokens = await refreshTokens(tokens);
+    tokens = await refreshTokens(kv, tokens);
   }
 
   const actRes = await fetch(
@@ -124,7 +123,8 @@ export default async function handler(req) {
       return new Response("OK", { status: 200 });
     }
 
-    await processEvent(event).catch((e) =>
+    const kv = Redis.fromEnv();
+    await processEvent(kv, event).catch((e) =>
       console.error("strava-webhook processEvent error:", e)
     );
 
