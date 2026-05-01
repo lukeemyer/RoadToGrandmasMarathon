@@ -10,9 +10,9 @@ function withTimeout(promise, ms, label) {
 export default async function handler(req, res) {
   console.log("strava-callback: handler start");
 
-  if (!process.env.UPSTASH_REDIS_REST_URL) {
-    console.error("strava-callback: UPSTASH_REDIS_REST_URL not set");
-    res.status(500).send("Server misconfigured: UPSTASH_REDIS_REST_URL missing");
+  if (!process.env.KV_REST_API_URL) {
+    console.error("strava-callback: KV_REST_API_URL not set");
+    res.status(500).send("Server misconfigured: KV_REST_API_URL missing");
     return;
   }
   if (!process.env.STRAVA_CLIENT_ID || !process.env.STRAVA_CLIENT_SECRET) {
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
 
   try {
     console.log("strava-callback: saving tokens to Redis");
-    const kv = Redis.fromEnv();
+    const kv = new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN });
     await withTimeout(
       kv.set("runs:strava-tokens", {
         access_token: data.access_token,

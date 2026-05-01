@@ -128,7 +128,7 @@ export default async function handler(req) {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const kv = Redis.fromEnv();
+  const kv = new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN });
 
   const url = new URL(req.url);
   const since = url.searchParams.get("since") ||

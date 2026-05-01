@@ -15,7 +15,7 @@ export default async function handler(req) {
     return new Response("Method not allowed", { status: 405, headers: CORS });
   }
 
-  const kv = Redis.fromEnv();
+  const kv = new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN });
   let runs = [];
   try {
     const raw = await kv.get("runs:all");
