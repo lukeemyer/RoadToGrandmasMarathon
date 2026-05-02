@@ -23,31 +23,33 @@ function categorize(activity) {
   return "Easy";
 }
 
-function transformLaps(laps) {
-  if (!Array.isArray(laps)) return [];
-  return laps.map(lap => {
-    const mi = (lap.distance || 0) * 0.000621371;
-    const paceSecMi = mi > 0.05 ? Math.round(lap.moving_time / mi) : null;
+// Use splits_standard from activity detail — always gives per-mile splits
+function transformSplits(splits) {
+  if (!Array.isArray(splits)) return [];
+  return splits.map(s => {
+    const mi = (s.distance || 0) * 0.000621371;
+    const paceSecMi = mi > 0.05 ? Math.round(s.moving_time / mi) : null;
     return {
-      n: lap.split || (lap.lap_index + 1),
+      n: s.split,
       mi: Math.round(mi * 100) / 100,
-      sec: lap.moving_time || 0,
+      sec: s.moving_time || 0,
       paceSecMi,
-      hr: lap.average_heartrate ? Math.round(lap.average_heartrate) : null,
-      cad: lap.average_cadence ? Math.round(lap.average_cadence * 2) : null,
-      elev: lap.total_elevation_gain ? Math.round(lap.total_elevation_gain * 3.28084) : null,
+      hr: s.average_heartrate ? Math.round(s.average_heartrate) : null,
+      cad: null,
+      elev: s.elevation_difference != null ? Math.round(s.elevation_difference * 3.28084) : null,
     };
   });
 }
 
-async function fetchLaps(accessToken, activityId) {
+async function fetchSplits(accessToken, activityId) {
   try {
     const r = await fetch(
-      `https://www.strava.com/api/v3/activities/${activityId}/laps`,
+      `https://www.strava.com/api/v3/activities/${activityId}`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
     if (!r.ok) return [];
-    return transformLaps(await r.json());
+    const a = await r.json();
+    return transformSplits(a.splits_standard || []);
   } catch { return []; }
 }
 
@@ -181,16 +183,17 @@ export default async function handler(req, res) {
   const blobIdSet = new Set(blobRuns.filter(r => r.stravaActivityId).map(r => r.stravaActivityId));
   let added = 0, gearPatched = 0, lapsPatched = 0;
 
-  // Collect IDs needing laps: new runs + existing runs missing laps (up to 25 backfill)
+  // Collect IDs needing splits: new runs + existing runs missing splits or with bad 1-lap data
   const newActivities = stravaRuns.filter(a => !blobIdSet.has(a.id));
   const needsLapsBackfill = blobRuns
-    .filter(r => r.stravaActivityId && stravaIdSet.has(r.stravaActivityId) && !r.laps?.length)
+    .filter(r => r.stravaActivityId && stravaIdSet.has(r.stravaActivityId) &&
+      (!r.laps?.length || (r.laps.length === 1 && (r.actualMiles || 0) >= 1.5)))
     .slice(0, 25);
 
-  // Fetch all laps in parallel
+  // Fetch all splits in parallel
   const [newLapsResults, backfillLapsResults] = await Promise.all([
-    Promise.all(newActivities.map(a => fetchLaps(tokens.access_token, a.id))),
-    Promise.all(needsLapsBackfill.map(r => fetchLaps(tokens.access_token, r.stravaActivityId))),
+    Promise.all(newActivities.map(a => fetchSplits(tokens.access_token, a.id))),
+    Promise.all(needsLapsBackfill.map(r => fetchSplits(tokens.access_token, r.stravaActivityId))),
   ]);
 
   // Add new runs with laps

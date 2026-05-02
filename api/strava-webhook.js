@@ -17,32 +17,22 @@ function categorize(activity) {
   return "Easy";
 }
 
-function transformLaps(laps) {
-  if (!Array.isArray(laps)) return [];
-  return laps.map(lap => {
-    const mi = (lap.distance || 0) * 0.000621371;
-    const paceSecMi = mi > 0.05 ? Math.round(lap.moving_time / mi) : null;
+// Use splits_standard from the activity detail for per-mile splits
+function transformSplits(splits) {
+  if (!Array.isArray(splits)) return [];
+  return splits.map(s => {
+    const mi = (s.distance || 0) * 0.000621371;
+    const paceSecMi = mi > 0.05 ? Math.round(s.moving_time / mi) : null;
     return {
-      n: lap.split || (lap.lap_index + 1),
+      n: s.split,
       mi: Math.round(mi * 100) / 100,
-      sec: lap.moving_time || 0,
+      sec: s.moving_time || 0,
       paceSecMi,
-      hr: lap.average_heartrate ? Math.round(lap.average_heartrate) : null,
-      cad: lap.average_cadence ? Math.round(lap.average_cadence * 2) : null,
-      elev: lap.total_elevation_gain ? Math.round(lap.total_elevation_gain * 3.28084) : null,
+      hr: s.average_heartrate ? Math.round(s.average_heartrate) : null,
+      cad: null,
+      elev: s.elevation_difference != null ? Math.round(s.elevation_difference * 3.28084) : null,
     };
   });
-}
-
-async function fetchLaps(accessToken, activityId) {
-  try {
-    const r = await fetch(
-      `https://www.strava.com/api/v3/activities/${activityId}/laps`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (!r.ok) return [];
-    return transformLaps(await r.json());
-  } catch { return []; }
 }
 
 function transformActivity(activity, laps = []) {
@@ -93,6 +83,7 @@ async function processEvent(kv, event) {
     tokens = await refreshTokens(kv, tokens);
   }
 
+  // Fetch full activity detail — splits_standard is included here
   const actRes = await fetch(
     `https://www.strava.com/api/v3/activities/${event.object_id}?include_all_efforts=false`,
     { headers: { Authorization: `Bearer ${tokens.access_token}` } }
@@ -101,7 +92,7 @@ async function processEvent(kv, event) {
 
   if (activity.type !== "Run" && activity.sport_type !== "Run") return;
 
-  const laps = await fetchLaps(tokens.access_token, activity.id);
+  const laps = transformSplits(activity.splits_standard || []);
   const run = transformActivity(activity, laps);
 
   let runs = [];

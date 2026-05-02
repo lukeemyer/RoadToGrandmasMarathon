@@ -1,18 +1,18 @@
 import { Redis } from "@upstash/redis";
 
-function transformLaps(laps) {
-  if (!Array.isArray(laps)) return [];
-  return laps.map(lap => {
-    const mi = (lap.distance || 0) * 0.000621371;
-    const paceSecMi = mi > 0.05 ? Math.round(lap.moving_time / mi) : null;
+function transformSplits(splits) {
+  if (!Array.isArray(splits)) return [];
+  return splits.map(s => {
+    const mi = (s.distance || 0) * 0.000621371;
+    const paceSecMi = mi > 0.05 ? Math.round(s.moving_time / mi) : null;
     return {
-      n: lap.split || (lap.lap_index + 1),
+      n: s.split,
       mi: Math.round(mi * 100) / 100,
-      sec: lap.moving_time || 0,
+      sec: s.moving_time || 0,
       paceSecMi,
-      hr: lap.average_heartrate ? Math.round(lap.average_heartrate) : null,
-      cad: lap.average_cadence ? Math.round(lap.average_cadence * 2) : null,
-      elev: lap.total_elevation_gain ? Math.round(lap.total_elevation_gain * 3.28084) : null,
+      hr: s.average_heartrate ? Math.round(s.average_heartrate) : null,
+      cad: null,
+      elev: s.elevation_difference != null ? Math.round(s.elevation_difference * 3.28084) : null,
     };
   });
 }
@@ -36,16 +36,19 @@ export default async function handler(req, res) {
 
   const kv = new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN });
 
-  // Return cached laps if already stored
   let blobRuns = [];
   try { const r = await kv.get("runs:all"); if (Array.isArray(r)) blobRuns = r; } catch {}
   const existing = blobRuns.find(r => r.stravaActivityId === activityId);
-  if (existing?.laps?.length) {
+
+  // Use cached splits only if they look like real per-mile data (more than 1 split)
+  const cachedOk = existing?.laps?.length > 1 ||
+    (existing?.laps?.length === 1 && (existing.actualMiles || 0) < 1.5);
+  if (cachedOk) {
     res.status(200).json({ laps: existing.laps, cached: true });
     return;
   }
 
-  // Fetch from Strava
+  // Fetch activity detail from Strava (splits_standard = per-mile splits)
   const tokens = await kv.get("runs:strava-tokens");
   if (!tokens) { res.status(503).json({ error: "No Strava tokens" }); return; }
 
@@ -67,14 +70,14 @@ export default async function handler(req, res) {
     await kv.set("runs:strava-tokens", { ...tokens, ...data });
   }
 
-  const r = await fetch(`https://www.strava.com/api/v3/activities/${activityId}/laps`, {
+  const r = await fetch(`https://www.strava.com/api/v3/activities/${activityId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!r.ok) { res.status(r.status).json({ error: "Strava laps fetch failed" }); return; }
+  if (!r.ok) { res.status(r.status).json({ error: "Strava activity fetch failed" }); return; }
 
-  const laps = transformLaps(await r.json());
+  const activity = await r.json();
+  const laps = transformSplits(activity.splits_standard || []);
 
-  // Cache in runs:all
   if (existing && laps.length) {
     existing.laps = laps;
     await kv.set("runs:all", blobRuns);
