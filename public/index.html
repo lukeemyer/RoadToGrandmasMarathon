@@ -3443,6 +3443,15 @@ kbd {
           .map(e => e.stravaActivityId)
       );
       const incomingIds = new Set(cloudRuns.filter(r => r.stravaActivityId).map(r => r.stravaActivityId));
+      // Snapshot cloud_ entries before removing them so manual edits (cadence,
+      // notes, shoe) can be restored when they are rebuilt below.
+      const prevCloud = new Map();
+      state.entries.forEach(e => {
+        if (e.id?.startsWith('cloud_') && e.stravaActivityId &&
+            incomingIds.has(e.stravaActivityId) && !idsInPlanSlot.has(e.stravaActivityId)) {
+          prevCloud.set(e.stravaActivityId, e);
+        }
+      });
       state.entries = state.entries.filter(e =>
         !(e.id?.startsWith('cloud_') && e.stravaActivityId &&
           incomingIds.has(e.stravaActivityId) && !idsInPlanSlot.has(e.stravaActivityId))
@@ -3499,30 +3508,32 @@ kbd {
           if (cr.stravaActivityId) bestSlot.stravaActivityId = cr.stravaActivityId;
           updated++;
         } else {
-          // No suitable plan slot — store as ad-hoc cloud entry
-          const id = 'cloud_' + cr.actualDate.replace(/-/g, '_') + '_' + Math.random().toString(36).slice(2, 7);
+          // No suitable plan slot — store as ad-hoc cloud entry.
+          // Restore any manually-edited fields from the previous version of this entry.
+          const prev = prevCloud.get(cr.stravaActivityId);
+          const id = prev?.id || ('cloud_' + cr.actualDate.replace(/-/g, '_') + '_' + Math.random().toString(36).slice(2, 7));
           state.entries.push({
             id,
             stravaActivityId: cr.stravaActivityId || null,
             plannedDate: cr.actualDate,
             day: '',
             week: 0,
-            session: cr.session || 'Logged run',
+            session: prev?.session || cr.session || 'Logged run',
             originalSession: '',
-            category: cr.category || 'Easy',
+            category: cr.category || prev?.category || 'Easy',
             plannedMiles: crMiles || 0,
             plannedPace: '',
             planNotes: '',
             status: 'Completed',
             actualDate: cr.actualDate,
             actualMiles: crMiles || 0,
-            runTime: cr.runTime || '',
-            avgCadence: cr.avgCadence || '',
-            avgHr: cr.avgHr || '',
-            elevationGainFt: cr.elevationGainFt || '',
-            shoe: resolveShoe(cr.shoe) || '',
+            runTime: cr.runTime || prev?.runTime || '',
+            avgCadence: cr.avgCadence || prev?.avgCadence || '',
+            avgHr: cr.avgHr || prev?.avgHr || '',
+            elevationGainFt: cr.elevationGainFt || prev?.elevationGainFt || '',
+            shoe: resolveShoe(cr.shoe) || prev?.shoe || '',
             source: cr.source || 'Cloud sync',
-            notes: cr.notes || '',
+            notes: cr.notes || prev?.notes || '',
             workoutDetails: '',
             routeId: '',
             matchConfidence: '',
