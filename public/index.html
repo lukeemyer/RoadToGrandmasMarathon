@@ -3626,8 +3626,8 @@ kbd {
     }
 
     async function pushState(stateData) {
-      if (!isEnabled()) return false;
       const cfg = getConfig();
+      if (!cfg.token) return false;
       try {
         const res = await fetch(resolveEndpoint() + '/save-state', {
           method: 'POST',
