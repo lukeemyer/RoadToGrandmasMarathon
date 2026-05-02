@@ -3685,8 +3685,8 @@ kbd {
     if (mode === 'read') return;
     const key = mode === 'template' ? TEMPLATE_KEY : STORAGE_KEY;
     try { localStorage.setItem(key, JSON.stringify(state)); } catch (err) { toast('Storage failed: ' + err.message, 'error'); }
-    // Debounced cloud push — fires 2s after the last change in owner mode
-    if (mode === 'owner' && CloudSync.isEnabled()) {
+    // Debounced cloud push — fires 2s after last change; only needs a token, not full sync config
+    if (mode === 'owner' && CloudSync.getConfig().token) {
       clearTimeout(_cloudPushTimer);
       _cloudPushTimer = setTimeout(() => CloudSync.pushState(state).catch(() => {}), 2000);
     }
@@ -7357,16 +7357,21 @@ kbd {
 
     state = loadState();
 
-    // Pull cloud state on load — if the cloud version is newer, replace local state
+    // Pull cloud state on load — if the cloud version is newer, replace local state.
+    // If Redis has nothing yet, bootstrap it with the current local state.
     if (mode === 'owner') {
       try {
         const cloudState = await CloudSync.fetchState();
+        const token = CloudSync.getConfig().token;
         if (cloudState && cloudState._savedAt) {
           const localSavedAt = state._savedAt || '';
           if (cloudState._savedAt > localSavedAt) {
             state = cloudState;
             try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
           }
+        } else if (!cloudState && token) {
+          // Nothing in Redis yet — seed it with the current local state
+          CloudSync.pushState(state).catch(() => {});
         }
       } catch {}
     }
