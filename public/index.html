@@ -2984,10 +2984,13 @@ kbd {
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
+.rd-actions {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 0.6rem;
+}
 .rd-close {
-  float: right; background: none; border: none; cursor: pointer;
-  color: var(--text-muted); font-size: 1.4rem; line-height: 1; padding: 0 0 0 1rem;
-  margin-top: -2px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 1.5rem; line-height: 1; padding: 0 0 0 0.5rem;
 }
 .rd-close:hover { color: var(--text-primary); }
 .rd-run-name {
@@ -6628,10 +6631,15 @@ kbd {
     return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%">${bars}</svg>`;
   }
 
+  let _rdOnKey = null;
+
   function openRunDetail(entry) {
+    // Clean up any existing panel and stale key listener
     document.querySelectorAll('.run-detail-backdrop,.run-detail-panel').forEach(el => el.remove());
+    if (_rdOnKey) { document.removeEventListener('keydown', _rdOnKey); _rdOnKey = null; }
 
     const pace = paceFromEntry(entry);
+    const laps = entry.laps || [];
 
     const backdrop = document.createElement('div');
     backdrop.className = 'run-detail-backdrop';
@@ -6640,119 +6648,158 @@ kbd {
     const panel = document.createElement('div');
     panel.className = 'run-detail-panel';
 
-    // Header
+    // ── Header ──
     const header = document.createElement('div');
     header.className = 'rd-header';
+
+    // Actions row: Edit (left) + × (right)
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'rd-actions';
+    if (mode === 'owner') {
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn btn-ghost btn-sm';
+      editBtn.textContent = 'Edit run';
+      editBtn.onclick = () => { closeRunDetail(); openRunModal(entry.id); };
+      actionsRow.appendChild(editBtn);
+    } else {
+      actionsRow.appendChild(document.createElement('span'));
+    }
     const closeBtn = document.createElement('button');
     closeBtn.className = 'rd-close';
     closeBtn.innerHTML = '&times;';
     closeBtn.onclick = closeRunDetail;
-    header.appendChild(closeBtn);
-    header.innerHTML += `<div class="rd-run-name">${escapeHTML(entry.session || 'Run')}</div>
-      <div class="rd-run-date">${entry.actualDate ? fmtMonthDay(entry.actualDate) : fmtMonthDay(entry.plannedDate)} &middot; ${entry.category || 'Easy'}</div>
-      <div class="rd-hero">
-        ${entry.actualMiles ? `<div class="rd-hero-stat"><div class="rd-hero-val">${entry.actualMiles}</div><div class="rd-hero-lbl">Miles</div></div>` : ''}
-        ${entry.runTime ? `<div class="rd-hero-stat"><div class="rd-hero-val">${entry.runTime}</div><div class="rd-hero-lbl">Time</div></div>` : ''}
-        ${pace ? `<div class="rd-hero-stat"><div class="rd-hero-val">${fmtPace(pace)}</div><div class="rd-hero-lbl">Avg Pace</div></div>` : ''}
-        ${entry.avgHr ? `<div class="rd-hero-stat"><div class="rd-hero-val">${entry.avgHr}</div><div class="rd-hero-lbl">Avg HR</div></div>` : ''}
-        ${entry.avgCadence ? `<div class="rd-hero-stat"><div class="rd-hero-val">${entry.avgCadence}</div><div class="rd-hero-lbl">Cadence</div></div>` : ''}
-        ${entry.elevationGainFt ? `<div class="rd-hero-stat"><div class="rd-hero-val">${entry.elevationGainFt}</div><div class="rd-hero-lbl">Elev (ft)</div></div>` : ''}
-      </div>`;
-    header.prepend(closeBtn);
+    actionsRow.appendChild(closeBtn);
+    header.appendChild(actionsRow);
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'rd-run-name';
+    nameEl.textContent = entry.session || 'Run';
+    header.appendChild(nameEl);
+
+    const dateEl = document.createElement('div');
+    dateEl.className = 'rd-run-date';
+    dateEl.textContent = (entry.actualDate ? fmtMonthDay(entry.actualDate) : fmtMonthDay(entry.plannedDate)) + ' · ' + (entry.category || 'Easy');
+    header.appendChild(dateEl);
+
+    const hero = document.createElement('div');
+    hero.className = 'rd-hero';
+    [
+      entry.actualMiles ? [entry.actualMiles, 'Miles'] : null,
+      entry.runTime     ? [entry.runTime, 'Time'] : null,
+      pace              ? [fmtPace(pace), 'Avg Pace'] : null,
+      entry.avgHr       ? [entry.avgHr, 'Avg HR'] : null,
+      entry.avgCadence  ? [entry.avgCadence, 'Cadence'] : null,
+      entry.elevationGainFt ? [entry.elevationGainFt + ' ft', 'Elevation'] : null,
+    ].filter(Boolean).forEach(([val, lbl]) => {
+      const stat = document.createElement('div');
+      stat.className = 'rd-hero-stat';
+      stat.innerHTML = `<div class="rd-hero-val">${val}</div><div class="rd-hero-lbl">${lbl}</div>`;
+      hero.appendChild(stat);
+    });
+    header.appendChild(hero);
     panel.appendChild(header);
 
+    // ── Body ──
     const body = document.createElement('div');
     body.className = 'rd-body';
 
-    const laps = entry.laps || [];
-
     if (laps.length) {
-      // Analytics
       const validPaces = laps.filter(l => l.paceSecMi && l.mi > 0.9).map(l => l.paceSecMi);
-      const avgLapPace = validPaces.length ? Math.round(validPaces.reduce((a, b) => a + b, 0) / validPaces.length) : null;
-      const fastLap = validPaces.length ? Math.min(...validPaces) : null;
-      const slowLap = validPaces.length ? Math.max(...validPaces) : null;
-      const fastLapN = fastLap ? laps.find(l => l.paceSecMi === fastLap)?.n : null;
-      const slowLapN = slowLap ? laps.find(l => l.paceSecMi === slowLap)?.n : null;
-      const fullLaps = laps.filter(l => l.mi > 0.9);
-      const half = Math.floor(fullLaps.length / 2);
-      const firstHalfPace = half > 0 ? Math.round(fullLaps.slice(0, half).reduce((s, l) => s + (l.paceSecMi || 0), 0) / half) : null;
-      const secondHalfPace = half > 0 ? Math.round(fullLaps.slice(half).reduce((s, l) => s + (l.paceSecMi || 0), 0) / Math.max(1, fullLaps.length - half)) : null;
-      const negSplit = firstHalfPace && secondHalfPace && secondHalfPace < firstHalfPace;
-      const hrLaps = laps.filter(l => l.hr);
-      const firstHalfHr = hrLaps.length >= 4 ? Math.round(hrLaps.slice(0, Math.floor(hrLaps.length / 2)).reduce((s, l) => s + l.hr, 0) / Math.floor(hrLaps.length / 2)) : null;
-      const secondHalfHr = hrLaps.length >= 4 ? Math.round(hrLaps.slice(Math.floor(hrLaps.length / 2)).reduce((s, l) => s + l.hr, 0) / Math.ceil(hrLaps.length / 2)) : null;
-      const hrDrift = firstHalfHr && secondHalfHr ? secondHalfHr - firstHalfHr : null;
+      const avgLapPace = validPaces.length
+        ? Math.round(validPaces.reduce((a, b) => a + b, 0) / validPaces.length)
+        : null;
 
-      const analytics = document.createElement('div');
-      analytics.className = 'rd-section';
-      analytics.innerHTML = `<h3>Performance</h3><div class="rd-analytics">
-        ${fastLap ? `<div class="rd-stat-box good"><div class="val">Mile ${fastLapN} &middot; ${fmtLapPace(fastLap)}</div><div class="lbl">Fastest mile</div></div>` : ''}
-        ${slowLap ? `<div class="rd-stat-box"><div class="val">Mile ${slowLapN} &middot; ${fmtLapPace(slowLap)}</div><div class="lbl">Slowest mile</div></div>` : ''}
-        ${firstHalfPace && secondHalfPace ? `<div class="rd-stat-box ${negSplit ? 'good' : 'warn'}">
-          <div class="val">${negSplit ? 'Negative split' : 'Positive split'}</div>
-          <div class="lbl">${fmtLapPace(firstHalfPace)} first half &rarr; ${fmtLapPace(secondHalfPace)} second</div>
-        </div>` : ''}
-        ${hrDrift !== null ? `<div class="rd-stat-box ${hrDrift > 8 ? 'warn' : ''}">
-          <div class="val">${hrDrift > 0 ? '+' : ''}${hrDrift} bpm</div>
-          <div class="lbl">HR drift (2nd half vs 1st)</div>
-        </div>` : ''}
-      </div>`;
-      body.appendChild(analytics);
+      // Analytics only make sense with 2+ full miles
+      if (validPaces.length >= 2) {
+        const fastPace = Math.min(...validPaces);
+        const slowPace = Math.max(...validPaces);
+        const fastLapN = laps.find(l => l.paceSecMi === fastPace)?.n;
+        const slowLapN = laps.find(l => l.paceSecMi === slowPace)?.n;
+        const fullLaps = laps.filter(l => l.mi > 0.9);
+        const half = Math.floor(fullLaps.length / 2);
+        const firstHalfPace = half > 0
+          ? Math.round(fullLaps.slice(0, half).reduce((s, l) => s + (l.paceSecMi || 0), 0) / half)
+          : null;
+        const secondHalfPace = half > 0
+          ? Math.round(fullLaps.slice(half).reduce((s, l) => s + (l.paceSecMi || 0), 0) / Math.max(1, fullLaps.length - half))
+          : null;
+        const negSplit = firstHalfPace && secondHalfPace && secondHalfPace < firstHalfPace;
+        const hrLaps = laps.filter(l => l.hr);
+        const h2 = Math.floor(hrLaps.length / 2);
+        const firstHalfHr = h2 >= 2 ? Math.round(hrLaps.slice(0, h2).reduce((s, l) => s + l.hr, 0) / h2) : null;
+        const secondHalfHr = h2 >= 2 ? Math.round(hrLaps.slice(h2).reduce((s, l) => s + l.hr, 0) / (hrLaps.length - h2)) : null;
+        const hrDrift = firstHalfHr && secondHalfHr ? secondHalfHr - firstHalfHr : null;
 
-      // Pace chart
-      if (avgLapPace) {
-        const chartSec = document.createElement('div');
-        chartSec.className = 'rd-section';
-        chartSec.innerHTML = `<h3>Pace by mile</h3><div class="rd-pace-chart">${buildPaceChart(laps, avgLapPace)}</div>
-          <div style="display:flex;gap:1rem;font-size:0.72rem;color:var(--text-muted)">
-            <span style="color:var(--success)">&#9646; Faster than avg</span>
-            <span style="color:var(--accent)">&#9646; On pace</span>
-            <span style="color:var(--danger)">&#9646; Slower than avg</span>
-          </div>`;
-        body.appendChild(chartSec);
+        const boxes = [];
+        if (fastPace !== slowPace) {
+          boxes.push(`<div class="rd-stat-box good"><div class="val">Mile ${fastLapN} &middot; ${fmtLapPace(fastPace)}</div><div class="lbl">Fastest mile</div></div>`);
+          boxes.push(`<div class="rd-stat-box"><div class="val">Mile ${slowLapN} &middot; ${fmtLapPace(slowPace)}</div><div class="lbl">Slowest mile</div></div>`);
+        }
+        if (firstHalfPace && secondHalfPace) {
+          boxes.push(`<div class="rd-stat-box ${negSplit ? 'good' : 'warn'}">
+            <div class="val">${negSplit ? 'Negative split ✓' : 'Positive split'}</div>
+            <div class="lbl">${fmtLapPace(firstHalfPace)} 1st half &rarr; ${fmtLapPace(secondHalfPace)} 2nd</div>
+          </div>`);
+        }
+        if (hrDrift !== null) {
+          boxes.push(`<div class="rd-stat-box ${Math.abs(hrDrift) > 8 ? 'warn' : ''}">
+            <div class="val">${hrDrift > 0 ? '+' : ''}${hrDrift} bpm</div>
+            <div class="lbl">HR drift (2nd half vs 1st)</div>
+          </div>`);
+        }
+        if (boxes.length) {
+          const analytics = document.createElement('div');
+          analytics.className = 'rd-section';
+          analytics.innerHTML = `<h3>Performance</h3><div class="rd-analytics">${boxes.join('')}</div>`;
+          body.appendChild(analytics);
+        }
+
+        if (avgLapPace) {
+          const chartSec = document.createElement('div');
+          chartSec.className = 'rd-section';
+          chartSec.innerHTML = `<h3>Pace by mile</h3><div class="rd-pace-chart">${buildPaceChart(laps, avgLapPace)}</div>
+            <div style="display:flex;gap:1rem;font-size:0.72rem;color:var(--text-muted);margin-top:0.25rem">
+              <span style="color:var(--success)">&#9646; Faster</span>
+              <span style="color:var(--accent)">&#9646; On pace</span>
+              <span style="color:var(--danger)">&#9646; Slower</span>
+            </div>`;
+          body.appendChild(chartSec);
+        }
       }
 
-      // Splits table
+      // Splits table — always show when laps exist
+      const hasHr   = laps.some(l => l.hr);
+      const hasCad  = laps.some(l => l.cad);
+      const hasElev = laps.some(l => l.elev);
+      let rows = '';
+      laps.forEach(lap => {
+        const isPartial = lap.mi < 0.9;
+        const faster = avgLapPace && lap.paceSecMi && lap.paceSecMi < avgLapPace - 10;
+        const slower = avgLapPace && lap.paceSecMi && lap.paceSecMi > avgLapPace + 10;
+        const pc = faster ? 'pace-fast' : slower ? 'pace-slow' : '';
+        rows += '<tr>'
+          + `<td>${isPartial ? '<span class="partial">' : ''}Mile ${lap.n}${isPartial ? '</span>' : ''}</td>`
+          + `<td>${lap.mi}</td>`
+          + `<td>${fmtLapPace(lap.sec || null)}</td>`
+          + `<td class="${pc}">${fmtLapPace(lap.paceSecMi)}</td>`
+          + (hasHr   ? `<td>${lap.hr  || '—'}</td>` : '')
+          + (hasCad  ? `<td>${lap.cad || '—'}</td>` : '')
+          + (hasElev ? `<td>${lap.elev != null ? (lap.elev > 0 ? '+' : '') + lap.elev : '—'}</td>` : '')
+          + '</tr>';
+      });
       const splitsSec = document.createElement('div');
       splitsSec.className = 'rd-section';
-      const hasHr = laps.some(l => l.hr);
-      const hasCad = laps.some(l => l.cad);
-      const hasElev = laps.some(l => l.elev);
-      splitsSec.innerHTML = `<h3>Mile splits</h3>
-        <table class="rd-splits">
-          <thead><tr>
-            <th>Mile</th>
-            <th>Dist</th>
-            <th>Time</th>
-            <th>Pace</th>
-            ${hasHr ? '<th>HR</th>' : ''}
-            ${hasCad ? '<th>Cad</th>' : ''}
-            ${hasElev ? '<th>Elev</th>' : ''}
-          </tr></thead>
-          <tbody>${laps.map(lap => {
-            const isPartial = lap.mi < 0.9;
-            const faster = avgLapPace && lap.paceSecMi && lap.paceSecMi < avgLapPace - 10;
-            const slower = avgLapPace && lap.paceSecMi && lap.paceSecMi > avgLapPace + 10;
-            const paceClass = faster ? 'pace-fast' : slower ? 'pace-slow' : '';
-            return `<tr>
-              <td>${isPartial ? `<span class="partial">Mile ${lap.n}</span>` : `Mile ${lap.n}`}</td>
-              <td>${lap.mi}</td>
-              <td>${fmtLapPace(lap.sec || null)}</td>
-              <td class="${paceClass}">${fmtLapPace(lap.paceSecMi)}</td>
-              ${hasHr ? `<td>${lap.hr || '—'}</td>` : ''}
-              ${hasCad ? `<td>${lap.cad || '—'}</td>` : ''}
-              ${hasElev ? `<td>${lap.elev != null ? (lap.elev > 0 ? '+' : '') + lap.elev : '—'}</td>` : ''}
-            </tr>`;
-          }).join('')}</tbody>
-        </table>`;
+      splitsSec.innerHTML = '<h3>Mile splits</h3>'
+        + '<table class="rd-splits"><thead><tr>'
+        + '<th>Mile</th><th>Dist</th><th>Time</th><th>Pace</th>'
+        + (hasHr ? '<th>HR</th>' : '') + (hasCad ? '<th>Cad</th>' : '') + (hasElev ? '<th>Elev</th>' : '')
+        + '</tr></thead><tbody>' + rows + '</tbody></table>';
       body.appendChild(splitsSec);
 
     } else {
-      // No laps — show load button if owner
       const noLaps = document.createElement('div');
       noLaps.className = 'rd-no-laps';
-      noLaps.innerHTML = `<span>Mile splits not loaded yet.</span>`;
+      noLaps.innerHTML = '<span>Mile splits not loaded yet.</span>';
       if (entry.stravaActivityId && mode === 'owner' && CloudSync.getConfig().token) {
         const loadBtn = document.createElement('button');
         loadBtn.className = 'btn btn-secondary';
@@ -6760,8 +6807,8 @@ kbd {
         loadBtn.onclick = async () => {
           loadBtn.textContent = 'Loading…';
           loadBtn.disabled = true;
-          const cfg = CloudSync.getConfig();
           try {
+            const cfg = CloudSync.getConfig();
             const r = await fetch(`${CloudSync.resolveEndpoint()}/run-detail?id=${entry.stravaActivityId}`,
               { headers: { Authorization: 'Bearer ' + cfg.token } });
             const data = await r.json();
@@ -6780,7 +6827,6 @@ kbd {
       body.appendChild(noLaps);
     }
 
-    // Notes
     if (entry.notes) {
       const notesSec = document.createElement('div');
       notesSec.className = 'rd-section';
@@ -6792,13 +6838,13 @@ kbd {
     document.body.appendChild(backdrop);
     document.body.appendChild(panel);
 
-    // Close on Escape
-    const onKey = e => { if (e.key === 'Escape') { closeRunDetail(); document.removeEventListener('keydown', onKey); } };
-    document.addEventListener('keydown', onKey);
+    _rdOnKey = e => { if (e.key === 'Escape') closeRunDetail(); };
+    document.addEventListener('keydown', _rdOnKey);
   }
 
   function closeRunDetail() {
     document.querySelectorAll('.run-detail-backdrop,.run-detail-panel').forEach(el => el.remove());
+    if (_rdOnKey) { document.removeEventListener('keydown', _rdOnKey); _rdOnKey = null; }
   }
 
   // ============================ Share modal ============================
