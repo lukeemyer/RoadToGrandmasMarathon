@@ -23,7 +23,35 @@ function categorize(activity) {
   return "Easy";
 }
 
-function transform(activity, gearMap = new Map()) {
+function transformLaps(laps) {
+  if (!Array.isArray(laps)) return [];
+  return laps.map(lap => {
+    const mi = (lap.distance || 0) * 0.000621371;
+    const paceSecMi = mi > 0.05 ? Math.round(lap.moving_time / mi) : null;
+    return {
+      n: lap.split || (lap.lap_index + 1),
+      mi: Math.round(mi * 100) / 100,
+      sec: lap.moving_time || 0,
+      paceSecMi,
+      hr: lap.average_heartrate ? Math.round(lap.average_heartrate) : null,
+      cad: lap.average_cadence ? Math.round(lap.average_cadence * 2) : null,
+      elev: lap.total_elevation_gain ? Math.round(lap.total_elevation_gain * 3.28084) : null,
+    };
+  });
+}
+
+async function fetchLaps(accessToken, activityId) {
+  try {
+    const r = await fetch(
+      `https://www.strava.com/api/v3/activities/${activityId}/laps`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!r.ok) return [];
+    return transformLaps(await r.json());
+  } catch { return []; }
+}
+
+function transform(activity, gearMap = new Map(), laps = []) {
   const shoeName = activity.gear?.name || gearMap.get(activity.gear_id) || "";
   return {
     stravaActivityId: activity.id,
@@ -39,6 +67,7 @@ function transform(activity, gearMap = new Map()) {
     category: categorize(activity),
     source: "Strava",
     notes: "",
+    laps,
     cloudReceivedAt: new Date().toISOString(),
   };
 }
@@ -150,21 +179,43 @@ export default async function handler(req, res) {
   const removed = beforeCount - blobRuns.length;
 
   const blobIdSet = new Set(blobRuns.filter(r => r.stravaActivityId).map(r => r.stravaActivityId));
-  let added = 0, gearPatched = 0;
+  let added = 0, gearPatched = 0, lapsPatched = 0;
+
+  // Collect IDs needing laps: new runs + existing runs missing laps (up to 25 backfill)
+  const newActivities = stravaRuns.filter(a => !blobIdSet.has(a.id));
+  const needsLapsBackfill = blobRuns
+    .filter(r => r.stravaActivityId && stravaIdSet.has(r.stravaActivityId) && !r.laps?.length)
+    .slice(0, 25);
+
+  // Fetch all laps in parallel
+  const [newLapsResults, backfillLapsResults] = await Promise.all([
+    Promise.all(newActivities.map(a => fetchLaps(tokens.access_token, a.id))),
+    Promise.all(needsLapsBackfill.map(r => fetchLaps(tokens.access_token, r.stravaActivityId))),
+  ]);
+
+  // Add new runs with laps
+  newActivities.forEach((a, i) => {
+    blobRuns.push(transform(a, gearMap, newLapsResults[i] || []));
+    added++;
+  });
+
+  // Patch existing runs
   for (const a of stravaRuns) {
-    if (!blobIdSet.has(a.id)) {
-      blobRuns.push(transform(a, gearMap));
-      added++;
-    } else {
-      const existing = blobRuns.find(r => r.stravaActivityId === a.id);
-      if (existing && !existing.shoe) {
-        const shoeName = a.gear?.name || gearMap.get(a.gear_id) || "";
-        if (shoeName) { existing.shoe = shoeName; gearPatched++; }
-      }
+    const existing = blobRuns.find(r => r.stravaActivityId === a.id);
+    if (!existing) continue;
+    if (!existing.shoe) {
+      const shoeName = a.gear?.name || gearMap.get(a.gear_id) || "";
+      if (shoeName) { existing.shoe = shoeName; gearPatched++; }
     }
   }
 
-  if (added > 0 || removed > 0 || gearPatched > 0) {
+  // Apply laps backfill
+  needsLapsBackfill.forEach((r, i) => {
+    const laps = backfillLapsResults[i];
+    if (laps?.length) { r.laps = laps; lapsPatched++; }
+  });
+
+  if (added > 0 || removed > 0 || gearPatched > 0 || lapsPatched > 0) {
     await kv.set("runs:all", blobRuns);
   }
 

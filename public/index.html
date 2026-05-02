@@ -2959,6 +2959,100 @@ kbd {
 @media (max-width: 720px) {
   .fab-sync { bottom: 16px; right: 80px; width: 44px; height: 44px; }
 }
+
+/* ---------- Run detail modal ---------- */
+.run-detail-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 900;
+  animation: rd-fade-in 0.18s ease;
+}
+.run-detail-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100vw);
+  background: var(--bg-elev-1); border-left: 1px solid var(--border-subtle);
+  z-index: 901; display: flex; flex-direction: column;
+  animation: rd-slide-in 0.22s cubic-bezier(0.25,0.46,0.45,0.94);
+  overflow: hidden;
+}
+@keyframes rd-fade-in  { from { opacity:0 } to { opacity:1 } }
+@keyframes rd-slide-in { from { transform:translateX(40px); opacity:0 } to { transform:none; opacity:1 } }
+
+.rd-header {
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.rd-close {
+  float: right; background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 1.4rem; line-height: 1; padding: 0 0 0 1rem;
+  margin-top: -2px;
+}
+.rd-close:hover { color: var(--text-primary); }
+.rd-run-name {
+  font-family: var(--font-display); font-size: 1.3rem; font-weight: 500;
+  color: var(--text-primary); margin-bottom: 0.1rem;
+}
+.rd-run-date { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+.rd-hero {
+  display: flex; gap: 1.5rem; flex-wrap: wrap;
+}
+.rd-hero-stat { display: flex; flex-direction: column; }
+.rd-hero-val {
+  font-family: var(--font-mono); font-size: 1.25rem; font-weight: 500;
+  color: var(--text-primary);
+}
+.rd-hero-lbl { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+.rd-body { flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem; }
+
+.rd-section { margin-bottom: 1.75rem; }
+.rd-section h3 {
+  font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 0.75rem;
+}
+
+/* Pace chart */
+.rd-pace-chart { width: 100%; overflow-x: auto; margin-bottom: 0.5rem; }
+.rd-pace-chart svg { display: block; }
+
+/* Analytics grid */
+.rd-analytics {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem;
+}
+.rd-stat-box {
+  background: var(--bg-elev-2); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 0.65rem 0.85rem;
+}
+.rd-stat-box .val {
+  font-family: var(--font-mono); font-size: 1rem; font-weight: 500;
+  color: var(--text-primary); line-height: 1.2;
+}
+.rd-stat-box .lbl { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.15rem; }
+.rd-stat-box.good .val { color: var(--success); }
+.rd-stat-box.warn .val { color: var(--warn); }
+
+/* Splits table */
+.rd-splits { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.rd-splits th {
+  text-align: right; padding: 0 0.5rem 0.4rem; font-size: 0.68rem; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.rd-splits th:first-child { text-align: left; }
+.rd-splits td {
+  text-align: right; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono); color: var(--text-secondary);
+}
+.rd-splits td:first-child { text-align: left; font-family: var(--font-body); color: var(--text-primary); font-weight: 500; }
+.rd-splits tr:last-child td { border-bottom: none; }
+.rd-splits .pace-fast { color: var(--success); }
+.rd-splits .pace-slow { color: var(--danger); }
+.rd-splits .partial { color: var(--text-muted); font-style: italic; }
+
+.rd-no-laps {
+  background: var(--bg-elev-2); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 1rem 1.25rem;
+  font-size: 0.875rem; color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
 </style>
 </head>
 <body data-theme="dark">
@@ -3506,6 +3600,7 @@ kbd {
           bestSlot.source = cr.source || 'Cloud sync';
           bestSlot.notes = cr.notes || bestSlot.notes;
           if (cr.stravaActivityId) bestSlot.stravaActivityId = cr.stravaActivityId;
+          if (cr.laps?.length) bestSlot.laps = cr.laps;
           updated++;
         } else {
           // No suitable plan slot — store as ad-hoc cloud entry.
@@ -3534,6 +3629,7 @@ kbd {
             shoe: resolveShoe(cr.shoe) || prev?.shoe || '',
             source: cr.source || 'Cloud sync',
             notes: cr.notes || prev?.notes || '',
+            laps: cr.laps?.length ? cr.laps : (prev?.laps || []),
             workoutDetails: '',
             routeId: '',
             matchConfidence: '',
@@ -3658,7 +3754,7 @@ kbd {
       } catch { return null; }
     }
 
-    return { getConfig, setConfig, isEnabled, fetchCloudRuns, postRun, mergeCloudRuns, pullAndMerge, pushState, fetchState };
+    return { getConfig, setConfig, isEnabled, resolveEndpoint, fetchCloudRuns, postRun, mergeCloudRuns, pullAndMerge, pushState, fetchState };
   })();
 
   function loadState() {
@@ -5766,6 +5862,7 @@ kbd {
         <td class="col-shoe">${e.shoe ? `<span class="shoe-tag">${e.shoe}</span>` : ''}</td>
         <td class="col-notes" style="max-width:240px;white-space:normal;color:var(--text-muted);font-size:12px">${escapeHTML(e.notes || '')}</td>
         <td class="col-actions" data-edit-only>
+          ${isCompleted && e.stravaActivityId ? `<button class="row-action-btn" title="View splits" aria-label="View splits" data-action="splits" data-id="${e.id}">${ICONS.activity}</button>` : ''}
           <button class="row-action-btn" title="Edit" aria-label="Edit run" data-action="edit" data-id="${e.id}">${ICONS.edit}</button>
           <button class="row-action-btn" title="Delete" aria-label="Delete run" data-action="delete" data-id="${e.id}">${ICONS.trash}</button>
         </td>
@@ -5793,7 +5890,10 @@ kbd {
             <div><div class="lbl">Elev (ft)</div><div class="val">${e.elevationGainFt || '—'}</div></div>
           </div>` : ''}
         ${e.notes ? `<div class="day-line" style="margin-top:10px;color:var(--text-muted);font-style:italic">${escapeHTML(e.notes)}</div>` : ''}
-        ${mode === 'owner' ? `<div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-ghost" data-action="edit" data-id="${e.id}">Edit</button></div>` : ''}
+        ${mode === 'owner' ? `<div style="margin-top:12px;display:flex;gap:8px">
+          ${isCompleted && e.stravaActivityId ? `<button class="btn btn-ghost" data-action="splits" data-id="${e.id}">Splits</button>` : ''}
+          <button class="btn btn-ghost" data-action="edit" data-id="${e.id}">Edit</button>
+        </div>` : ''}
       `;
       cardsWrap.appendChild(card);
     });
@@ -5811,7 +5911,16 @@ kbd {
         ev.stopPropagation();
         confirmDelete(b.dataset.id);
       }));
+      $$('[data-action="splits"]', wrap).forEach(b => b.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const entry = state.entries.find(e => e.id === b.dataset.id);
+        if (entry) openRunDetail(entry);
+      }));
       $$('[data-action="edit"]', cardsWrap).forEach(b => b.addEventListener('click', () => openRunModal(b.dataset.id)));
+      $$('[data-action="splits"]', cardsWrap).forEach(b => b.addEventListener('click', () => {
+        const entry = state.entries.find(e => e.id === b.dataset.id);
+        if (entry) openRunDetail(entry);
+      }));
     }
 
     // Apply read-only visibility on action col header
@@ -6479,6 +6588,210 @@ kbd {
     sw.appendChild(el('span', { class: 'slider' }));
     wrap.appendChild(sw);
     return wrap;
+  }
+
+  // ============================ Run detail panel ============================
+  function fmtLapPace(sec) {
+    if (!sec) return '—';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${pad2(s)}`;
+  }
+
+  function buildPaceChart(laps, avgPaceSec) {
+    if (!laps.length) return '';
+    const paces = laps.map(l => l.paceSecMi).filter(Boolean);
+    if (!paces.length) return '';
+    const min = Math.min(...paces), max = Math.max(...paces);
+    const range = max - min || 1;
+    const W = Math.max(laps.length * 28 + 20, 200), H = 72, pad = 10, barW = 20;
+    const bars = laps.map((lap, i) => {
+      const p = lap.paceSecMi;
+      if (!p) return '';
+      const bh = Math.max(4, Math.round(((p - min) / range) * (H - pad * 2 - 4)) + 4);
+      const x = i * 28 + pad;
+      const y = H - pad - bh;
+      const faster = p < avgPaceSec - 10;
+      const slower = p > avgPaceSec + 10;
+      const fill = faster ? 'var(--success)' : slower ? 'var(--danger)' : 'var(--accent)';
+      const partial = lap.mi < 0.9;
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${bh}" rx="3" fill="${fill}" opacity="${partial ? 0.5 : 0.85}"/>
+              <text x="${x + barW/2}" y="${H - 1}" text-anchor="middle" font-size="8" fill="var(--text-muted)">${lap.n}</text>`;
+    }).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%">${bars}</svg>`;
+  }
+
+  function openRunDetail(entry) {
+    document.querySelectorAll('.run-detail-backdrop,.run-detail-panel').forEach(el => el.remove());
+
+    const pace = paceFromEntry(entry);
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'run-detail-backdrop';
+    backdrop.onclick = closeRunDetail;
+
+    const panel = document.createElement('div');
+    panel.className = 'run-detail-panel';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'rd-header';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'rd-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = closeRunDetail;
+    header.appendChild(closeBtn);
+    header.innerHTML += `<div class="rd-run-name">${escapeHTML(entry.session || 'Run')}</div>
+      <div class="rd-run-date">${entry.actualDate ? fmtMonthDay(entry.actualDate) : fmtMonthDay(entry.plannedDate)} &middot; ${entry.category || 'Easy'}</div>
+      <div class="rd-hero">
+        ${entry.actualMiles ? `<div class="rd-hero-stat"><div class="rd-hero-val">${entry.actualMiles}</div><div class="rd-hero-lbl">Miles</div></div>` : ''}
+        ${entry.runTime ? `<div class="rd-hero-stat"><div class="rd-hero-val">${entry.runTime}</div><div class="rd-hero-lbl">Time</div></div>` : ''}
+        ${pace ? `<div class="rd-hero-stat"><div class="rd-hero-val">${fmtPace(pace)}</div><div class="rd-hero-lbl">Avg Pace</div></div>` : ''}
+        ${entry.avgHr ? `<div class="rd-hero-stat"><div class="rd-hero-val">${entry.avgHr}</div><div class="rd-hero-lbl">Avg HR</div></div>` : ''}
+        ${entry.avgCadence ? `<div class="rd-hero-stat"><div class="rd-hero-val">${entry.avgCadence}</div><div class="rd-hero-lbl">Cadence</div></div>` : ''}
+        ${entry.elevationGainFt ? `<div class="rd-hero-stat"><div class="rd-hero-val">${entry.elevationGainFt}</div><div class="rd-hero-lbl">Elev (ft)</div></div>` : ''}
+      </div>`;
+    header.prepend(closeBtn);
+    panel.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'rd-body';
+
+    const laps = entry.laps || [];
+
+    if (laps.length) {
+      // Analytics
+      const validPaces = laps.filter(l => l.paceSecMi && l.mi > 0.9).map(l => l.paceSecMi);
+      const avgLapPace = validPaces.length ? Math.round(validPaces.reduce((a, b) => a + b, 0) / validPaces.length) : null;
+      const fastLap = validPaces.length ? Math.min(...validPaces) : null;
+      const slowLap = validPaces.length ? Math.max(...validPaces) : null;
+      const fastLapN = fastLap ? laps.find(l => l.paceSecMi === fastLap)?.n : null;
+      const slowLapN = slowLap ? laps.find(l => l.paceSecMi === slowLap)?.n : null;
+      const fullLaps = laps.filter(l => l.mi > 0.9);
+      const half = Math.floor(fullLaps.length / 2);
+      const firstHalfPace = half > 0 ? Math.round(fullLaps.slice(0, half).reduce((s, l) => s + (l.paceSecMi || 0), 0) / half) : null;
+      const secondHalfPace = half > 0 ? Math.round(fullLaps.slice(half).reduce((s, l) => s + (l.paceSecMi || 0), 0) / Math.max(1, fullLaps.length - half)) : null;
+      const negSplit = firstHalfPace && secondHalfPace && secondHalfPace < firstHalfPace;
+      const hrLaps = laps.filter(l => l.hr);
+      const firstHalfHr = hrLaps.length >= 4 ? Math.round(hrLaps.slice(0, Math.floor(hrLaps.length / 2)).reduce((s, l) => s + l.hr, 0) / Math.floor(hrLaps.length / 2)) : null;
+      const secondHalfHr = hrLaps.length >= 4 ? Math.round(hrLaps.slice(Math.floor(hrLaps.length / 2)).reduce((s, l) => s + l.hr, 0) / Math.ceil(hrLaps.length / 2)) : null;
+      const hrDrift = firstHalfHr && secondHalfHr ? secondHalfHr - firstHalfHr : null;
+
+      const analytics = document.createElement('div');
+      analytics.className = 'rd-section';
+      analytics.innerHTML = `<h3>Performance</h3><div class="rd-analytics">
+        ${fastLap ? `<div class="rd-stat-box good"><div class="val">Mile ${fastLapN} &middot; ${fmtLapPace(fastLap)}</div><div class="lbl">Fastest mile</div></div>` : ''}
+        ${slowLap ? `<div class="rd-stat-box"><div class="val">Mile ${slowLapN} &middot; ${fmtLapPace(slowLap)}</div><div class="lbl">Slowest mile</div></div>` : ''}
+        ${firstHalfPace && secondHalfPace ? `<div class="rd-stat-box ${negSplit ? 'good' : 'warn'}">
+          <div class="val">${negSplit ? 'Negative split' : 'Positive split'}</div>
+          <div class="lbl">${fmtLapPace(firstHalfPace)} first half &rarr; ${fmtLapPace(secondHalfPace)} second</div>
+        </div>` : ''}
+        ${hrDrift !== null ? `<div class="rd-stat-box ${hrDrift > 8 ? 'warn' : ''}">
+          <div class="val">${hrDrift > 0 ? '+' : ''}${hrDrift} bpm</div>
+          <div class="lbl">HR drift (2nd half vs 1st)</div>
+        </div>` : ''}
+      </div>`;
+      body.appendChild(analytics);
+
+      // Pace chart
+      if (avgLapPace) {
+        const chartSec = document.createElement('div');
+        chartSec.className = 'rd-section';
+        chartSec.innerHTML = `<h3>Pace by mile</h3><div class="rd-pace-chart">${buildPaceChart(laps, avgLapPace)}</div>
+          <div style="display:flex;gap:1rem;font-size:0.72rem;color:var(--text-muted)">
+            <span style="color:var(--success)">&#9646; Faster than avg</span>
+            <span style="color:var(--accent)">&#9646; On pace</span>
+            <span style="color:var(--danger)">&#9646; Slower than avg</span>
+          </div>`;
+        body.appendChild(chartSec);
+      }
+
+      // Splits table
+      const splitsSec = document.createElement('div');
+      splitsSec.className = 'rd-section';
+      const hasHr = laps.some(l => l.hr);
+      const hasCad = laps.some(l => l.cad);
+      const hasElev = laps.some(l => l.elev);
+      splitsSec.innerHTML = `<h3>Mile splits</h3>
+        <table class="rd-splits">
+          <thead><tr>
+            <th>Mile</th>
+            <th>Dist</th>
+            <th>Time</th>
+            <th>Pace</th>
+            ${hasHr ? '<th>HR</th>' : ''}
+            ${hasCad ? '<th>Cad</th>' : ''}
+            ${hasElev ? '<th>Elev</th>' : ''}
+          </tr></thead>
+          <tbody>${laps.map(lap => {
+            const isPartial = lap.mi < 0.9;
+            const faster = avgLapPace && lap.paceSecMi && lap.paceSecMi < avgLapPace - 10;
+            const slower = avgLapPace && lap.paceSecMi && lap.paceSecMi > avgLapPace + 10;
+            const paceClass = faster ? 'pace-fast' : slower ? 'pace-slow' : '';
+            return `<tr>
+              <td>${isPartial ? `<span class="partial">Mile ${lap.n}</span>` : `Mile ${lap.n}`}</td>
+              <td>${lap.mi}</td>
+              <td>${fmtLapPace(lap.sec || null)}</td>
+              <td class="${paceClass}">${fmtLapPace(lap.paceSecMi)}</td>
+              ${hasHr ? `<td>${lap.hr || '—'}</td>` : ''}
+              ${hasCad ? `<td>${lap.cad || '—'}</td>` : ''}
+              ${hasElev ? `<td>${lap.elev != null ? (lap.elev > 0 ? '+' : '') + lap.elev : '—'}</td>` : ''}
+            </tr>`;
+          }).join('')}</tbody>
+        </table>`;
+      body.appendChild(splitsSec);
+
+    } else {
+      // No laps — show load button if owner
+      const noLaps = document.createElement('div');
+      noLaps.className = 'rd-no-laps';
+      noLaps.innerHTML = `<span>Mile splits not loaded yet.</span>`;
+      if (entry.stravaActivityId && mode === 'owner' && CloudSync.getConfig().token) {
+        const loadBtn = document.createElement('button');
+        loadBtn.className = 'btn btn-secondary';
+        loadBtn.textContent = 'Load splits';
+        loadBtn.onclick = async () => {
+          loadBtn.textContent = 'Loading…';
+          loadBtn.disabled = true;
+          const cfg = CloudSync.getConfig();
+          try {
+            const r = await fetch(`${CloudSync.resolveEndpoint()}/run-detail?id=${entry.stravaActivityId}`,
+              { headers: { Authorization: 'Bearer ' + cfg.token } });
+            const data = await r.json();
+            if (data.laps?.length) {
+              entry.laps = data.laps;
+              saveState();
+              closeRunDetail();
+              openRunDetail(entry);
+            } else {
+              loadBtn.textContent = 'No splits found';
+            }
+          } catch { loadBtn.textContent = 'Failed'; }
+        };
+        noLaps.appendChild(loadBtn);
+      }
+      body.appendChild(noLaps);
+    }
+
+    // Notes
+    if (entry.notes) {
+      const notesSec = document.createElement('div');
+      notesSec.className = 'rd-section';
+      notesSec.innerHTML = `<h3>Notes</h3><div style="font-size:0.875rem;color:var(--text-secondary);line-height:1.6">${escapeHTML(entry.notes)}</div>`;
+      body.appendChild(notesSec);
+    }
+
+    panel.appendChild(body);
+    document.body.appendChild(backdrop);
+    document.body.appendChild(panel);
+
+    // Close on Escape
+    const onKey = e => { if (e.key === 'Escape') { closeRunDetail(); document.removeEventListener('keydown', onKey); } };
+    document.addEventListener('keydown', onKey);
+  }
+
+  function closeRunDetail() {
+    document.querySelectorAll('.run-detail-backdrop,.run-detail-panel').forEach(el => el.remove());
   }
 
   // ============================ Share modal ============================

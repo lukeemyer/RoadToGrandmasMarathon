@@ -17,7 +17,35 @@ function categorize(activity) {
   return "Easy";
 }
 
-function transformActivity(activity) {
+function transformLaps(laps) {
+  if (!Array.isArray(laps)) return [];
+  return laps.map(lap => {
+    const mi = (lap.distance || 0) * 0.000621371;
+    const paceSecMi = mi > 0.05 ? Math.round(lap.moving_time / mi) : null;
+    return {
+      n: lap.split || (lap.lap_index + 1),
+      mi: Math.round(mi * 100) / 100,
+      sec: lap.moving_time || 0,
+      paceSecMi,
+      hr: lap.average_heartrate ? Math.round(lap.average_heartrate) : null,
+      cad: lap.average_cadence ? Math.round(lap.average_cadence * 2) : null,
+      elev: lap.total_elevation_gain ? Math.round(lap.total_elevation_gain * 3.28084) : null,
+    };
+  });
+}
+
+async function fetchLaps(accessToken, activityId) {
+  try {
+    const r = await fetch(
+      `https://www.strava.com/api/v3/activities/${activityId}/laps`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!r.ok) return [];
+    return transformLaps(await r.json());
+  } catch { return []; }
+}
+
+function transformActivity(activity, laps = []) {
   return {
     stravaActivityId: activity.id,
     actualDate: activity.start_date_local.slice(0, 10),
@@ -32,6 +60,7 @@ function transformActivity(activity) {
     category: categorize(activity),
     source: "Strava",
     notes: "",
+    laps,
     cloudReceivedAt: new Date().toISOString(),
   };
 }
@@ -72,7 +101,8 @@ async function processEvent(kv, event) {
 
   if (activity.type !== "Run" && activity.sport_type !== "Run") return;
 
-  const run = transformActivity(activity);
+  const laps = await fetchLaps(tokens.access_token, activity.id);
+  const run = transformActivity(activity, laps);
 
   let runs = [];
   try {
