@@ -606,6 +606,10 @@ section.block { margin-bottom: 40px; }
   background: linear-gradient(180deg, var(--success-soft), var(--bg-elev-1) 60%);
   border-color: color-mix(in srgb, var(--success) 30%, var(--border-subtle));
 }
+.day-card.is-completed:hover {
+  border-color: var(--success);
+  transform: translateY(-1px);
+}
 .day-card-head {
   display: flex;
   justify-content: space-between;
@@ -4386,7 +4390,10 @@ kbd {
         </div>`;
       if (mode === 'owner') {
         card.style.cursor = 'pointer';
-        card.addEventListener('click', () => openRunModal(e.id));
+        card.addEventListener('click', () => {
+          if (isCompleted) openRunDetail(e);
+          else openRunModal(e.id);
+        });
       }
       wrap.appendChild(card);
     });
@@ -6595,7 +6602,7 @@ kbd {
     if (!sec) return '—';
     const m = Math.floor(sec / 60);
     const s = sec % 60;
-    return `${m}:${pad2(s)}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
   }
 
   function buildPaceChart(laps, avgPaceSec) {
