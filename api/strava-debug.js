@@ -12,12 +12,22 @@ export default async function handler(req, res) {
     res.status(401).json({ error: "Unauthorized" }); return;
   }
 
-  const activityId = parseInt(req.query.id, 10);
-  if (!activityId) { res.status(400).json({ error: "Missing ?id=" }); return; }
-
   const kv = new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN });
+
+  // Auto-pick a Strava activity if no id provided
+  let activityId = parseInt(req.query.id, 10) || null;
+  if (!activityId) {
+    let runs = [];
+    try { const r = await kv.get("runs:all"); if (Array.isArray(r)) runs = r; } catch {}
+    const withStrava = runs.filter(r => r.stravaActivityId && r.actualMiles >= 2);
+    if (!withStrava.length) { res.status(404).json({ error: "No Strava runs found in store" }); return; }
+    // Pick the most recent
+    withStrava.sort((a, b) => (b.actualDate || "").localeCompare(a.actualDate || ""));
+    activityId = withStrava[0].stravaActivityId;
+  }
+
   const tokens = await kv.get("runs:strava-tokens");
-  if (!tokens) { res.status(503).json({ error: "No tokens" }); return; }
+  if (!tokens) { res.status(503).json({ error: "No Strava tokens in store" }); return; }
 
   let accessToken = tokens.access_token;
   if (Date.now() / 1000 >= tokens.expires_at) {
@@ -41,15 +51,18 @@ export default async function handler(req, res) {
   const activity = await r.json();
 
   res.status(r.status).json({
+    tested_activity_id: activityId,
     http_status: r.status,
-    top_level_keys: Object.keys(activity),
+    name: activity.name,
     type: activity.type,
     sport_type: activity.sport_type,
-    distance_meters: activity.distance,
+    distance_miles: activity.distance ? Math.round(activity.distance * 0.000621371 * 100) / 100 : null,
     moving_time_sec: activity.moving_time,
-    splits_standard: activity.splits_standard ?? "MISSING",
-    splits_metric: activity.splits_metric ?? "MISSING",
-    splits_standard_length: Array.isArray(activity.splits_standard) ? activity.splits_standard.length : null,
-    splits_metric_length: Array.isArray(activity.splits_metric) ? activity.splits_metric.length : null,
+    splits_standard_count: Array.isArray(activity.splits_standard) ? activity.splits_standard.length : "MISSING",
+    splits_metric_count: Array.isArray(activity.splits_metric) ? activity.splits_metric.length : "MISSING",
+    splits_standard_first: Array.isArray(activity.splits_standard) && activity.splits_standard.length
+      ? activity.splits_standard[0] : null,
+    splits_standard_all: activity.splits_standard ?? null,
+    error: activity.errors ? activity.errors : undefined,
   });
 }

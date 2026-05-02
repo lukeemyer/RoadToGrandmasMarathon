@@ -6497,7 +6497,28 @@ kbd {
         toast(`Synced: ${parts.join(', ')}`);
       }
     });
-    cloudSec.appendChild(el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '8px' } }, testBtn, syncNowBtn));
+    const debugSplitsBtn = el('button', { class: 'btn btn-ghost' }, 'Diagnose splits');
+    const debugOut = el('pre', { style: { marginTop: '10px', fontSize: '11px', background: 'var(--bg-elev-2)', padding: '10px', borderRadius: '6px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', display: 'none' } });
+    debugSplitsBtn.addEventListener('click', async () => {
+      const cfg = CloudSync.getConfig();
+      if (!cfg.token) { toast('Set shared secret token first', 'error'); return; }
+      debugSplitsBtn.disabled = true;
+      debugSplitsBtn.textContent = 'Checking…';
+      try {
+        const r = await fetch(CloudSync.resolveEndpoint() + '/strava-debug',
+          { headers: { Authorization: 'Bearer ' + cfg.token } });
+        const data = await r.json();
+        debugOut.style.display = 'block';
+        debugOut.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        debugOut.style.display = 'block';
+        debugOut.textContent = 'Error: ' + e.message;
+      }
+      debugSplitsBtn.disabled = false;
+      debugSplitsBtn.textContent = 'Diagnose splits';
+    });
+    cloudSec.appendChild(el('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '8px' } }, testBtn, syncNowBtn, debugSplitsBtn));
+    cloudSec.appendChild(debugOut);
 
     paneData.appendChild(cloudSec);
 
