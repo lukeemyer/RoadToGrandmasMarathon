@@ -3625,7 +3625,33 @@ kbd {
       return { added: merged.added, updated: merged.updated, removed };
     }
 
-    return { getConfig, setConfig, isEnabled, fetchCloudRuns, postRun, mergeCloudRuns, pullAndMerge };
+    async function pushState(stateData) {
+      if (!isEnabled()) return false;
+      const cfg = getConfig();
+      try {
+        const res = await fetch(resolveEndpoint() + '/save-state', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + cfg.token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...stateData, _savedAt: new Date().toISOString() }),
+        });
+        return res.ok;
+      } catch { return false; }
+    }
+
+    async function fetchState() {
+      if (!isEnabled()) return null;
+      const cfg = getConfig();
+      try {
+        const res = await fetch(resolveEndpoint() + '/get-state', {
+          headers: { 'Authorization': 'Bearer ' + cfg.token },
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data.state || null;
+      } catch { return null; }
+    }
+
+    return { getConfig, setConfig, isEnabled, fetchCloudRuns, postRun, mergeCloudRuns, pullAndMerge, pushState, fetchState };
   })();
 
   function loadState() {
@@ -3658,10 +3684,16 @@ kbd {
     return cloneDeep(ORIGINAL_DATA);
   }
 
+  let _cloudPushTimer = null;
   function saveState() {
     if (mode === 'read') return;
     const key = mode === 'template' ? TEMPLATE_KEY : STORAGE_KEY;
     try { localStorage.setItem(key, JSON.stringify(state)); } catch (err) { toast('Storage failed: ' + err.message, 'error'); }
+    // Debounced cloud push — fires 2s after the last change in owner mode
+    if (mode === 'owner' && CloudSync.isEnabled()) {
+      clearTimeout(_cloudPushTimer);
+      _cloudPushTimer = setTimeout(() => CloudSync.pushState(state).catch(() => {}), 2000);
+    }
   }
 
   // ============================ Pace / recommendation ============================
@@ -7328,6 +7360,20 @@ kbd {
     if (mode === 'read') document.body.classList.add('read-only');
 
     state = loadState();
+
+    // Pull cloud state on load — if the cloud version is newer, replace local state
+    if (mode === 'owner' && CloudSync.isEnabled()) {
+      try {
+        const cloudState = await CloudSync.fetchState();
+        if (cloudState && cloudState._savedAt) {
+          const localSavedAt = state._savedAt || '';
+          if (cloudState._savedAt > localSavedAt) {
+            state = cloudState;
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+          }
+        }
+      } catch {}
+    }
 
     // Retroactively normalize Strava shoe names against configured shoes
     {
