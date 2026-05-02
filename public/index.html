@@ -3639,12 +3639,8 @@ kbd {
     }
 
     async function fetchState() {
-      if (!isEnabled()) return null;
-      const cfg = getConfig();
       try {
-        const res = await fetch(resolveEndpoint() + '/get-state', {
-          headers: { 'Authorization': 'Bearer ' + cfg.token },
-        });
+        const res = await fetch(resolveEndpoint() + '/get-state');
         if (!res.ok) return null;
         const data = await res.json();
         return data.state || null;
@@ -7362,7 +7358,7 @@ kbd {
     state = loadState();
 
     // Pull cloud state on load — if the cloud version is newer, replace local state
-    if (mode === 'owner' && CloudSync.isEnabled()) {
+    if (mode === 'owner') {
       try {
         const cloudState = await CloudSync.fetchState();
         if (cloudState && cloudState._savedAt) {
