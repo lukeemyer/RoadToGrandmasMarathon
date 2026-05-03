@@ -3591,7 +3591,7 @@ kbd {
           if (!slotDate) continue;
           const slotMiles = parseFloat(slot.plannedMiles) || 0;
           const s = scoreMatch(crMiles, crDate, slotMiles, slotDate);
-          if (s !== null && s > bestScore) { bestScore = s; bestSlot = slot; }
+          if (s !== null && s > 0 && s > bestScore) { bestScore = s; bestSlot = slot; }
         }
 
         if (bestSlot) {

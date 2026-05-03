@@ -183,26 +183,19 @@ export default async function handler(req, res) {
   const blobIdSet = new Set(blobRuns.filter(r => r.stravaActivityId).map(r => r.stravaActivityId));
   let added = 0, gearPatched = 0, lapsPatched = 0;
 
-  // Collect IDs needing splits: new runs + existing runs missing splits or with bad 1-lap data
   const newActivities = stravaRuns.filter(a => !blobIdSet.has(a.id));
-  const needsLapsBackfill = blobRuns
-    .filter(r => r.stravaActivityId && stravaIdSet.has(r.stravaActivityId) &&
-      (!r.laps?.length || (r.laps.length === 1 && (r.actualMiles || 0) >= 1.5)))
-    .slice(0, 25);
 
-  // Fetch all splits in parallel
-  const [newLapsResults, backfillLapsResults] = await Promise.all([
-    Promise.all(newActivities.map(a => fetchSplits(tokens.access_token, a.id))),
-    Promise.all(needsLapsBackfill.map(r => fetchSplits(tokens.access_token, r.stravaActivityId))),
-  ]);
-
-  // Add new runs with laps
+  // ── Step 1: fetch splits for new runs and add them ──
+  // Done separately so new runs are always saved even if the backfill step below is slow.
+  const newSplitsResults = await Promise.all(
+    newActivities.map(a => fetchSplits(tokens.access_token, a.id))
+  );
   newActivities.forEach((a, i) => {
-    blobRuns.push(transform(a, gearMap, newLapsResults[i] || []));
+    blobRuns.push(transform(a, gearMap, newSplitsResults[i] || []));
     added++;
   });
 
-  // Patch existing runs
+  // Patch existing runs (gear names)
   for (const a of stravaRuns) {
     const existing = blobRuns.find(r => r.stravaActivityId === a.id);
     if (!existing) continue;
@@ -212,14 +205,27 @@ export default async function handler(req, res) {
     }
   }
 
-  // Apply laps backfill
-  needsLapsBackfill.forEach((r, i) => {
-    const laps = backfillLapsResults[i];
-    if (laps?.length) { r.laps = laps; lapsPatched++; }
-  });
-
-  if (added > 0 || removed > 0 || gearPatched > 0 || lapsPatched > 0) {
+  // Save new runs immediately — don't let backfill delay block them
+  if (added > 0 || removed > 0 || gearPatched > 0) {
     await kv.set("runs:all", blobRuns);
+  }
+
+  // ── Step 2: backfill splits for existing runs missing them (small batch) ──
+  // Keep at 5 to stay well within Vercel's 10s function timeout.
+  const needsLapsBackfill = blobRuns
+    .filter(r => r.stravaActivityId && stravaIdSet.has(r.stravaActivityId) &&
+      (!r.laps?.length || (r.laps.length === 1 && (r.actualMiles || 0) >= 1.5)))
+    .slice(0, 5);
+
+  if (needsLapsBackfill.length) {
+    const backfillResults = await Promise.all(
+      needsLapsBackfill.map(r => fetchSplits(tokens.access_token, r.stravaActivityId))
+    );
+    needsLapsBackfill.forEach((r, i) => {
+      const laps = backfillResults[i];
+      if (laps?.length > 1) { r.laps = laps; lapsPatched++; }
+    });
+    if (lapsPatched > 0) await kv.set("runs:all", blobRuns);
   }
 
   res.status(200).json({ runs: blobRuns, added, removed });

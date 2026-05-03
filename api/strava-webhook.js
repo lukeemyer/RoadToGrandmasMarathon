@@ -123,13 +123,16 @@ export default async function handler(req, res) {
     return;
   }
 
-  // POST — activity event; respond immediately then process
+  // POST — process first, then respond.
+  // Vercel does not guarantee execution continues after res.send(), so we must
+  // complete the work before sending 200. Strava retries if we take >2s, but
+  // the duplicate-check in processEvent handles that safely.
   if (req.method === "POST") {
-    res.status(200).send("OK");
     const kv = new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN });
     await processEvent(kv, req.body || {}).catch(e =>
       console.error("strava-webhook processEvent error:", e)
     );
+    res.status(200).send("OK");
     return;
   }
 
