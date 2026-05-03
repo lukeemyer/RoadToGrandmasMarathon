@@ -228,5 +228,5 @@ export default async function handler(req, res) {
     if (lapsPatched > 0) await kv.set("runs:all", blobRuns);
   }
 
-  res.status(200).json({ runs: blobRuns, added, removed });
+  res.status(200).json({ runs: blobRuns, added, removed, stravaTotal: stravaRuns.length });
 }

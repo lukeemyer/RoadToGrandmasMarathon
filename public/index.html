@@ -3466,10 +3466,10 @@ kbd {
     function setConfig(cfg) {
       try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch {}
     }
-    // True only when the owner token is configured (needed for strava-sync writes)
+    // True when the owner token is set — endpoint is optional (defaults to current origin)
     function isEnabled() {
       const cfg = getConfig();
-      return !!(cfg.enabled && cfg.endpoint && cfg.token);
+      return !!(cfg.token);
     }
     // Always derives the endpoint from the current origin so any device can read
     function resolveEndpoint() {
@@ -4161,17 +4161,24 @@ kbd {
         ? state.entries.reduce((m, e) => e.plannedDate && e.plannedDate < m ? e.plannedDate : m, '9999-99-99')
         : null;
       try {
+        const cfg = CloudSync.getConfig();
+        if (!cfg.token) {
+          toast('No token set — open Settings → Data and add your shared secret', 'error');
+          return;
+        }
         const result = await CloudSync.pullAndMerge(planStart, { force: true });
         if (!result) {
-          toast('Sync failed — check settings', 'error');
+          toast('Sync failed — check that your token matches SHARED_SECRET on Vercel', 'error');
         } else if (!result.added && !result.updated && !result.removed) {
-          toast('Already up to date');
+          const checked = result.stravaTotal != null ? ` (${result.stravaTotal} from Strava)` : '';
+          toast(`Already up to date${checked}`);
         } else {
           renderAll();
           const parts = [];
           if (result.added) parts.push(`${result.added} new run${result.added === 1 ? '' : 's'}`);
           if (result.updated) parts.push(`${result.updated} slot${result.updated === 1 ? '' : 's'} filled`);
           if (result.removed) parts.push(`${result.removed} removed`);
+          if (result.stravaTotal != null) parts.push(`${result.stravaTotal} from Strava`);
           toast(`Strava sync: ${parts.join(', ')}`);
         }
       } finally {
