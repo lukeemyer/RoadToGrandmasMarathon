@@ -6719,6 +6719,32 @@ kbd {
     </svg>`;
   }
 
+  function buildCadChart(laps) {
+    const pts = laps.map((lap, i) => lap.cad ? { x: i * 28 + 20, cad: lap.cad, n: lap.n } : null).filter(Boolean);
+    if (pts.length < 2) return '';
+    const cads = pts.map(p => p.cad);
+    const minC = Math.min(...cads), maxC = Math.max(...cads);
+    const cadRange = maxC - minC || 1;
+    const W = Math.max(laps.length * 28 + 20, 200), H = 60, pad = 8;
+    const plotH = H - pad * 2 - 4;
+    const mapped = pts.map(p => ({ ...p, y: H - pad - Math.round(((p.cad - minC) / cadRange) * plotH) - 2 }));
+    const lineStr = mapped.map(p => `${p.x},${p.y}`).join(' ');
+    const areaStr = `${mapped[0].x},${H - pad} ${lineStr} ${mapped[mapped.length - 1].x},${H - pad}`;
+    const dots = mapped.map(p =>
+      `<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="var(--accent)" opacity="0.85"><title>Mile ${p.n}: ${p.cad} spm</title></circle>`
+    ).join('');
+    const mileLabels = laps.map((lap, i) =>
+      `<text x="${i * 28 + 20}" y="${H - 1}" text-anchor="middle" font-size="8" fill="var(--text-muted)">${lap.n}</text>`
+    ).join('');
+    const cadLabels = `<text x="${W - 2}" y="${pad + 5}" text-anchor="end" font-size="8" fill="var(--text-muted)">${maxC}</text>
+      <text x="${W - 2}" y="${H - pad + 2}" text-anchor="end" font-size="8" fill="var(--text-muted)">${minC}</text>`;
+    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%">
+      <polygon points="${areaStr}" fill="var(--accent)" opacity="0.12"/>
+      <polyline points="${lineStr}" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity="0.75" stroke-linejoin="round"/>
+      ${dots}${mileLabels}${cadLabels}
+    </svg>`;
+  }
+
   let _rdOnKey = null;
   let weekGlanceOffset = 0;
 
@@ -6904,12 +6930,21 @@ kbd {
             </div>`;
           body.appendChild(chartSec);
 
-          const hrChartData = laps.filter(l => l.hr);
-          if (hrChartData.length >= 3) {
+          if (laps.filter(l => l.hr).length >= 3) {
             const hrSec = document.createElement('div');
             hrSec.className = 'rd-section';
             hrSec.innerHTML = `<h3>Heart rate by mile</h3><div class="rd-pace-chart">${buildHrChart(laps)}</div>`;
             body.appendChild(hrSec);
+          }
+
+          if (laps.filter(l => l.cad).length >= 3) {
+            const cadSec = document.createElement('div');
+            cadSec.className = 'rd-section';
+            const avgCad = Math.round(laps.filter(l => l.cad).reduce((s, l) => s + l.cad, 0) / laps.filter(l => l.cad).length);
+            cadSec.innerHTML = `<h3>Cadence by mile</h3>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.35rem">avg ${avgCad} spm</div>
+              <div class="rd-pace-chart">${buildCadChart(laps)}</div>`;
+            body.appendChild(cadSec);
           }
         }
       }

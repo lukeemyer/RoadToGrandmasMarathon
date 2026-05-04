@@ -35,7 +35,7 @@ function transformSplits(splits) {
       sec: s.moving_time || 0,
       paceSecMi,
       hr: s.average_heartrate ? Math.round(s.average_heartrate) : null,
-      cad: null,
+      cad: s.average_cadence ? Math.round(s.average_cadence * 2) : null,
       elev: s.elevation_difference != null ? Math.round(s.elevation_difference * 3.28084) : null,
     };
   });
