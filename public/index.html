@@ -3122,6 +3122,7 @@ kbd {
           <h2>Progress over time</h2>
         </div>
       </div>
+      <div class="runlog-toolbar" id="trend-filter-bar"></div>
       <div class="charts-grid">
         <div class="chart-card">
           <h3>Weekly mileage</h3>
@@ -3315,6 +3316,7 @@ kbd {
   let charts = {};         // canvas -> render fn
   let intervalRule = { warmup: 1, cooldown: 1, hardSeg: 0.5, easySeg: 0.5 };
   let runLogSort = { col: 'date', dir: 'desc' };
+  let trendFilter = 'all';
 
   // ============================ Utils ============================
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -5748,34 +5750,69 @@ kbd {
 
   function renderCharts() {
     const colors = getChartColors();
-    const completed = state.entries.filter(entryIsCompleted).slice().sort(sortByEffectiveDateAsc);
 
-    // Weekly Mileage (grouped bars) — planned vs actual per training week
+    // ── Filter bar ──
+    const filterBar = $('#trend-filter-bar');
+    if (filterBar) {
+      filterBar.innerHTML = '';
+      const filterOptions = [
+        { key: 'all',     label: 'All runs' },
+        { key: 'easy',    label: 'Easy' },
+        { key: 'long',    label: 'Long' },
+        { key: 'quality', label: 'Quality' },
+        { key: 'race',    label: 'Race' },
+      ];
+      filterOptions.forEach(({ key, label }) => {
+        const b = el('button', {
+          class: 'filter-pill ' + (trendFilter === key ? 'active' : ''),
+          onClick: () => { trendFilter = key; renderCharts(); }
+        }, label);
+        filterBar.appendChild(b);
+      });
+    }
+
+    // ── Category filter ──
+    function matchesTrendFilter(e) {
+      if (trendFilter === 'all') return true;
+      const cat = (e.category || '').toLowerCase();
+      if (trendFilter === 'easy')    return /easy/.test(cat);
+      if (trendFilter === 'long')    return /long/.test(cat);
+      if (trendFilter === 'quality') return /quality/.test(cat);
+      if (trendFilter === 'race')    return /race/.test(cat);
+      return true;
+    }
+
+    const allCompleted = state.entries.filter(entryIsCompleted).slice().sort(sortByEffectiveDateAsc);
+    const completed = allCompleted.filter(matchesTrendFilter);
+
+    // ── Weekly Mileage ──
     const weekly = {};
     state.entries.forEach(e => {
       if (entryIsCross(e)) return;
       const w = e.week;
       if (!(w in weekly)) weekly[w] = { planned: 0, actual: 0 };
-      weekly[w].planned += parseFloat(e.plannedMiles) || 0;
-      if (entryIsCompleted(e)) weekly[w].actual += parseFloat(e.actualMiles) || 0;
+      if (trendFilter === 'all') weekly[w].planned += parseFloat(e.plannedMiles) || 0;
+      if (entryIsCompleted(e) && matchesTrendFilter(e)) weekly[w].actual += parseFloat(e.actualMiles) || 0;
     });
     const weekKeys = Object.keys(weekly).map(Number).sort((a, b) => a - b);
-    const plannedSeries = weekKeys.map(k => ({ x: k, y: weekly[k].planned, label: `W${k}` }));
     const actualSeries = weekKeys.map(k => ({ x: k, y: weekly[k].actual, label: `W${k}` }));
+    const chartSeries = trendFilter === 'all'
+      ? [
+          { label: 'Planned', color: hexAlpha(colors.cool, 0.85), data: weekKeys.map(k => ({ x: k, y: weekly[k].planned, label: `W${k}` })) },
+          { label: 'Actual',  color: colors.accent,                data: actualSeries }
+        ]
+      : [{ label: 'Actual', color: colors.accent, data: actualSeries }];
     drawChart($('#chart-weekly'), {
       kind: 'bar',
-      series: [
-        { label: 'Planned', color: hexAlpha(colors.cool, 0.85), data: plannedSeries },
-        { label: 'Actual',  color: colors.accent,                data: actualSeries }
-      ],
-      legend: true,
+      series: chartSeries,
+      legend: trendFilter === 'all',
       yTitle: 'Miles',
       xTitle: 'Training week',
       dataLabels: true,
       fmtY: v => Number.isInteger(v) ? v.toString() : v.toFixed(1)
     });
 
-    // Pace Trend (line)
+    // ── Pace Trend ──
     const pacePoints = completed.map((e, i) => {
       const p = paceFromEntry(e);
       return p ? { x: i, y: p, label: fmtMonthDay(effectiveDate(e)) } : null;
@@ -5791,7 +5828,7 @@ kbd {
       fmtY: v => fmtTimeFromSec(v)
     });
 
-    // Heart Rate Trend (line)
+    // ── Heart Rate Trend ──
     const hrPoints = completed.map((e, i) => parseFloat(e.avgHr) > 0 ? { x: i, y: parseFloat(e.avgHr), label: fmtMonthDay(effectiveDate(e)) } : null).filter(Boolean);
     drawChart($('#chart-hr'), {
       kind: 'line',
@@ -5803,7 +5840,7 @@ kbd {
       color: '#ff6b6b'
     });
 
-    // Cadence Trend (line)
+    // ── Cadence Trend ──
     const cadPoints = completed.map((e, i) => parseFloat(e.avgCadence) > 0 ? { x: i, y: parseFloat(e.avgCadence), label: fmtMonthDay(effectiveDate(e)) } : null).filter(Boolean);
     drawChart($('#chart-cad'), {
       kind: 'line',
