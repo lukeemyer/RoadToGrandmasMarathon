@@ -5866,9 +5866,10 @@ kbd {
     // filters
     if (activeFilter === 'completed') entries = entries.filter(entryIsCompleted);
     else if (activeFilter === 'planned') entries = entries.filter(e => !entryIsCompleted(e));
-    else if (activeFilter === 'long') entries = entries.filter(e => /long/i.test(e.category));
-    else if (activeFilter === 'quality') entries = entries.filter(e => /quality|race/i.test(e.category));
-    else if (activeFilter === 'easy') entries = entries.filter(e => /easy/i.test(e.category));
+    else if (activeFilter === 'easy')    entries = entries.filter(e => /easy/i.test(e.category));
+    else if (activeFilter === 'long')    entries = entries.filter(e => /long/i.test(e.category));
+    else if (activeFilter === 'quality') entries = entries.filter(e => /quality/i.test(e.category));
+    else if (activeFilter === 'race')    entries = entries.filter(e => /race/i.test(e.category));
 
     entries.sort((a, b) => {
       let av, bv;
@@ -7220,9 +7221,10 @@ kbd {
       ['all', 'All'],
       ['completed', 'Completed'],
       ['planned', 'Planned'],
+      ['easy', 'Easy'],
       ['long', 'Long'],
       ['quality', 'Interval'],
-      ['easy', 'Easy']
+      ['race', 'Race'],
     ];
     filters.forEach(([k, label]) => {
       const b = el('button', { class: 'filter-pill ' + (activeFilter === k ? 'active' : ''), onClick: () => { activeFilter = k; renderRunLogToolbar(); renderRunLog(); } }, label);
