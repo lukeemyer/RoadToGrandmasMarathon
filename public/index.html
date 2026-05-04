@@ -6671,26 +6671,26 @@ kbd {
     if (!paces.length) return '';
     const min = Math.min(...paces), max = Math.max(...paces);
     const range = max - min || 1;
-    const W = Math.max(laps.length * 28 + 20, 200), H = 72, pad = 10, barW = 20;
+    const barW = 20, barGap = 28;
+    const topZone = 16, bottomZone = 12;
+    const W = Math.max(laps.length * barGap + 20, 200), H = 96;
+    const plotH = H - topZone - bottomZone;
     const bars = laps.map((lap, i) => {
       const p = lap.paceSecMi;
       if (!p) return '';
-      const bh = Math.max(4, Math.round(((p - min) / range) * (H - pad * 2 - 4)) + 4);
-      const x = i * 28 + pad;
-      const y = H - pad - bh;
+      const bh = Math.max(6, Math.round(((p - min) / range) * (plotH - 6)) + 6);
+      const x = i * barGap + 10;
+      const y = H - bottomZone - bh;
       const faster = p < avgPaceSec - 10;
       const slower = p > avgPaceSec + 10;
       const fill = faster ? 'var(--success)' : slower ? 'var(--danger)' : 'var(--accent)';
       const partial = lap.mi < 0.9;
-      return `<rect x="${x}" y="${y}" width="${barW}" height="${bh}" rx="3" fill="${fill}" opacity="${partial ? 0.5 : 0.85}"><title>Mile ${lap.n}: ${fmtLapPace(p)}/mi${lap.hr ? ' · ' + lap.hr + ' bpm' : ''}</title></rect>
-              <text x="${x + barW/2}" y="${H - 1}" text-anchor="middle" font-size="8" fill="var(--text-muted)">${lap.n}</text>`;
+      const paceStr = fmtLapPace(p);
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${bh}" rx="3" fill="${fill}" opacity="${partial ? 0.5 : 0.85}"/>
+              <text x="${x + barW / 2}" y="${y - 3}" text-anchor="middle" font-size="7" fill="${fill}">${paceStr}</text>
+              <text x="${x + barW / 2}" y="${H - 2}" text-anchor="middle" font-size="8" fill="var(--text-muted)">${lap.n}</text>`;
     }).join('');
-    const fastLabel = fmtLapPace(min);
-    const slowLabel = fmtLapPace(max);
-    const labelX = W - 2;
-    const paceLabels = `<text x="${labelX}" y="${pad + 5}" text-anchor="end" font-size="8" fill="var(--success)">${fastLabel}</text>
-      <text x="${labelX}" y="${H - pad + 2}" text-anchor="end" font-size="8" fill="var(--danger)">${slowLabel}</text>`;
-    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%">${bars}${paceLabels}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="max-width:100%">${bars}</svg>`;
   }
 
   function buildHrChart(laps) {
@@ -6895,7 +6895,7 @@ kbd {
           const chartSec = document.createElement('div');
           chartSec.className = 'rd-section';
           chartSec.innerHTML = `<h3>Pace by mile</h3>
-            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.35rem">avg ${fmtLapPace(avgLapPace)}/mi &middot; hover bars for details</div>
+            <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.35rem">avg ${fmtLapPace(avgLapPace)}/mi</div>
             <div class="rd-pace-chart">${buildPaceChart(laps, avgLapPace)}</div>
             <div style="display:flex;gap:1rem;font-size:0.72rem;color:var(--text-muted);margin-top:0.4rem">
               <span style="color:var(--success)">&#9646; Faster than avg</span>
