@@ -3830,7 +3830,7 @@ kbd {
     if (sess.includes('half')) return { label: t.half || '8:45-9:15/mi', kind: 'Half marathon / race sim' };
     if (sess.includes('interval')) return { label: t.intervalHard || '0.5 mi very hard', kind: 'Intervals · easy bookends use easy pace' };
     if (cat === 'long' || cat === 'long / race sim') return { label: t.long || '9:45-10:45/mi relaxed', kind: 'Long run' };
-    if (cat === 'quality' || cat === 'race') return { label: t.quality || '8:45-9:15/mi for quality portions', kind: 'Quality work' };
+    if (cat === 'quality' || cat === 'interval' || cat === 'race') return { label: t.quality || '8:45-9:15/mi for quality portions', kind: 'Interval' };
     if (cat === 'easy' || sess.includes('easy')) return { label: t.easy || '10:00-10:45/mi conversational', kind: 'Easy' };
     return { label: t.easy || '—', kind: 'Easy' };
   }
@@ -4721,7 +4721,7 @@ kbd {
       }
 
       // Anything labeled Quality, Workout, Intervals, Tempo, Threshold, MP/Marathon-pace work
-      if (cat === 'quality' || /interval|tempo|threshold|workout|marathon pace|goal pace|mp\b/.test(session)) {
+      if (cat === 'quality' || cat === 'interval' || /interval|tempo|threshold|workout|marathon pace|goal pace|mp\b/.test(session)) {
         return 'quality';
       }
 
@@ -4733,7 +4733,7 @@ kbd {
     const buckets = {
       easy:    { id: 'easy',    label: 'Easy / aerobic', sub: 'Conversational base — the volume engine',  planned: 0, completed: 0, plannedRuns: 0, completedRuns: 0, remainingRuns: 0 },
       long:    { id: 'long',    label: 'Long runs',      sub: 'Sunday long runs + race simulations',      planned: 0, completed: 0, plannedRuns: 0, completedRuns: 0, remainingRuns: 0 },
-      quality: { id: 'quality', label: 'Quality work',   sub: 'Intervals, tempo, MP & threshold',         planned: 0, completed: 0, plannedRuns: 0, completedRuns: 0, remainingRuns: 0 },
+      quality: { id: 'quality', label: 'Interval',        sub: 'Intervals, tempo, MP & threshold',         planned: 0, completed: 0, plannedRuns: 0, completedRuns: 0, remainingRuns: 0 },
     };
     let raceDay = { planned: 0, completed: 0, plannedRuns: 0 };
 
@@ -5120,7 +5120,7 @@ kbd {
     // === Card 6: Marathon pace exposure ===
     const mpZoneLo = goalSec - 8, mpZoneHi = goalSec + 8;
     const mpRuns = completed.filter(e => {
-      const isMpSession = /marathon|race|mp|goal pace/i.test(e.session || '') || /quality.*race/i.test(e.category || '');
+      const isMpSession = /marathon|race|mp|goal pace/i.test(e.session || '') || /quality|interval/i.test(e.category || '');
       const p = paceFromEntry(e);
       const inMpZone = p && p >= mpZoneLo && p <= mpZoneHi && parseFloat(e.actualMiles) >= 4;
       return isMpSession || inMpZone;
@@ -5290,7 +5290,7 @@ kbd {
     // Marathon pace exposure
     const mpZoneLo = goalSec - 8, mpZoneHi = goalSec + 8;
     const mpRuns = completed.filter(e => {
-      const isMp = /marathon|race|mp|goal pace/i.test(e.session || '') || /quality.*race/i.test(e.category || '');
+      const isMp = /marathon|race|mp|goal pace/i.test(e.session || '') || /quality|interval/i.test(e.category || '');
       const p = paceFromEntry(e);
       return isMp || (p && p >= mpZoneLo && p <= mpZoneHi && parseFloat(e.actualMiles) >= 4);
     });
@@ -5777,7 +5777,7 @@ kbd {
       const cat = (e.category || '').toLowerCase();
       if (trendFilter === 'easy')    return /easy/.test(cat);
       if (trendFilter === 'long')    return /long/.test(cat);
-      if (trendFilter === 'quality') return /quality/.test(cat);
+      if (trendFilter === 'quality') return /quality|interval/i.test(cat);
       if (trendFilter === 'race')    return /race/.test(cat);
       return true;
     }
@@ -5868,7 +5868,7 @@ kbd {
     else if (activeFilter === 'planned') entries = entries.filter(e => !entryIsCompleted(e));
     else if (activeFilter === 'easy')    entries = entries.filter(e => /easy/i.test(e.category));
     else if (activeFilter === 'long')    entries = entries.filter(e => /long/i.test(e.category));
-    else if (activeFilter === 'quality') entries = entries.filter(e => /quality/i.test(e.category));
+    else if (activeFilter === 'quality') entries = entries.filter(e => /quality|interval/i.test(e.category));
     else if (activeFilter === 'race')    entries = entries.filter(e => /race/i.test(e.category));
 
     entries.sort((a, b) => {
@@ -6161,7 +6161,7 @@ kbd {
 
     const fSession = el('input', { class: 'input', type: 'text', value: e.session || '' });
     const fCategory = el('select', { class: 'select' });
-    ['Easy','Long','Long / Race Sim','Quality','Race','Cross','Other'].forEach(o => fCategory.appendChild(el('option', { value: o, ...(e.category === o ? { selected: '' } : {}) }, o)));
+    ['Easy','Long','Long / Race Sim','Interval','Race','Cross','Other'].forEach(o => fCategory.appendChild(el('option', { value: o, ...(e.category === o || (o === 'Interval' && e.category === 'Quality') ? { selected: '' } : {}) }, o)));
     const fPlannedDate = el('input', { class: 'input', type: 'date', value: e.plannedDate || '' });
     const fActualDate = el('input', { class: 'input', type: 'date', value: e.actualDate || '' });
     const fPlanned = el('input', { class: 'input', type: 'number', step: '0.1', min: '0', value: e.plannedMiles ?? '' });
@@ -6390,7 +6390,7 @@ kbd {
     const t = state.appSettings.paceTargets || (state.appSettings.paceTargets = {});
     panePaces.appendChild(buildField('Easy pace', t.easy || '', v => t.easy = v));
     panePaces.appendChild(buildField('Long run pace', t.long || '', v => t.long = v));
-    panePaces.appendChild(buildField('Quality pace', t.quality || '', v => t.quality = v));
+    panePaces.appendChild(buildField('Interval pace', t.quality || '', v => t.quality = v));
     panePaces.appendChild(buildField('Half marathon / race sim pace', t.half || '', v => t.half = v));
     panePaces.appendChild(buildField('Marathon goal pace', t.marathon || '', v => t.marathon = v));
     panePaces.appendChild(buildField('Interval hard effort', t.intervalHard || '', v => t.intervalHard = v));
@@ -6444,7 +6444,7 @@ kbd {
 
     // Plan & display
     const panePlan = el('div', { class: 'settings-pane', dataset: { pane: 'plan' } });
-    panePlan.appendChild(buildField('Quality day', state.appSettings.qualityDay || 'Wednesday', v => state.appSettings.qualityDay = v));
+    panePlan.appendChild(buildField('Interval day', state.appSettings.qualityDay || 'Wednesday', v => state.appSettings.qualityDay = v));
     panePlan.appendChild(buildField('Long run day', state.appSettings.longRunDay || 'Saturday', v => state.appSettings.longRunDay = v));
     panePlan.appendChild(buildSelect('Week starts on', ['Monday','Sunday'], state.appSettings.weekStartsOn || 'Monday', v => state.appSettings.weekStartsOn = v));
     panePlan.appendChild(buildSelect('Display density', ['Comfortable','Compact'], state.appSettings.displayDensity || 'Comfortable', v => { state.appSettings.displayDensity = v; }));

@@ -12,7 +12,7 @@ function formatHMS(seconds) {
 function categorize(activity) {
   if (activity.workout_type === 1) return "Race";
   if (activity.workout_type === 2) return "Long";
-  if (activity.workout_type === 3) return "Quality";
+  if (activity.workout_type === 3) return "Interval";
   if (activity.distance >= 16093) return "Long";
   return "Easy";
 }
