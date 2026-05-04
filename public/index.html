@@ -5910,7 +5910,7 @@ kbd {
         <td class="col-date">${fmtMonthDay(e.plannedDate)}</td>
         <td class="col-date">${e.actualDate ? fmtMonthDay(e.actualDate) : '<span style="color:var(--text-faint)">—</span>'}</td>
         <td class="col-session">${e.session}${prRibbons}</td>
-        <td>${e.category || ''}</td>
+        <td>${e.category === 'Quality' ? 'Interval' : (e.category || '')}</td>
         <td class="col-miles">${e.plannedMiles || '—'}</td>
         <td class="col-miles"><span class="editable ${e.actualMiles ? '' : 'placeholder'}" data-id="${e.id}" data-field="actualMiles">${e.actualMiles ?? '—'}</span></td>
         <td class="col-runtime"><span class="editable ${e.runTime ? '' : 'placeholder'}" data-id="${e.id}" data-field="runTime">${e.runTime || '—'}</span></td>
