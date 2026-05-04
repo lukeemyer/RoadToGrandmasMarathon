@@ -924,6 +924,8 @@ section.block { margin-bottom: 40px; }
   color: var(--text-secondary);
 }
 .btn.btn-ghost:hover { background: var(--bg-elev-2); color: var(--text-primary); }
+.wg-nav-btn { padding: 0.25rem 0.6rem; font-size: 1.1rem; line-height: 1; }
+.wg-nav-btn:disabled { opacity: 0.3; cursor: default; pointer-events: none; }
 .btn.btn-danger {
   color: var(--danger);
   border-color: var(--danger-soft);
@@ -3086,9 +3088,12 @@ kbd {
       <div class="section-head">
         <div>
           <div class="h2-eyebrow">My Week at a Glance</div>
-          <h2>This week's plan</h2>
+          <h2 id="week-glance-title">This week's plan</h2>
         </div>
-        <div class="head-aux">Click a day to edit (owner mode)</div>
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <button id="week-glance-prev" class="btn btn-ghost wg-nav-btn" title="Previous week">&#8592;</button>
+          <button id="week-glance-next" class="btn btn-ghost wg-nav-btn" title="Next week" disabled>&#8594;</button>
+        </div>
       </div>
       <div id="week-glance" class="week-glance"></div>
     </section>
@@ -4346,8 +4351,32 @@ kbd {
     wrap.innerHTML = '';
     const today = todayLocal();
     const weekStartsOn = state.appSettings.weekStartsOn || 'Monday';
-    const start = startOfWeek(today, weekStartsOn);
+    const thisWeekStart = startOfWeek(today, weekStartsOn);
+    const start = new Date(thisWeekStart);
+    start.setDate(thisWeekStart.getDate() + weekGlanceOffset * 7);
     const end = new Date(start); end.setDate(start.getDate() + 6);
+
+    // Update title and nav buttons
+    const titleEl = document.getElementById('week-glance-title');
+    const prevBtn = document.getElementById('week-glance-prev');
+    const nextBtn = document.getElementById('week-glance-next');
+    if (titleEl) {
+      if (weekGlanceOffset === 0) titleEl.textContent = "This week's plan";
+      else if (weekGlanceOffset === -1) titleEl.textContent = "Last week";
+      else {
+        const startStr = [
+          String(start.getFullYear()),
+          String(start.getMonth() + 1).padStart(2, '0'),
+          String(start.getDate()).padStart(2, '0'),
+        ].join('-');
+        titleEl.textContent = 'Week of ' + fmtMonthDay(startStr);
+      }
+    }
+    if (prevBtn) prevBtn.onclick = () => { weekGlanceOffset--; renderWeekGlance(); };
+    if (nextBtn) {
+      nextBtn.disabled = weekGlanceOffset >= 0;
+      nextBtn.onclick = () => { weekGlanceOffset++; renderWeekGlance(); };
+    }
 
     // Find all entries (incl. cross only if user wants) within this week
     const includeCross = !!state.appSettings.showCrossTraining;
@@ -6660,6 +6689,7 @@ kbd {
   }
 
   let _rdOnKey = null;
+  let weekGlanceOffset = 0;
 
   function openRunDetail(entry) {
     // Clean up any existing panel and stale key listener
