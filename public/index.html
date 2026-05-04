@@ -610,6 +610,9 @@ section.block { margin-bottom: 40px; }
   border-color: var(--success);
   transform: translateY(-1px);
 }
+.day-card.rest-day { opacity: 0.45; }
+.day-card.rest-day .rest-label { color: var(--text-faint); font-style: italic; }
+.status-pill.rest { background: transparent; color: var(--text-faint); border: 1px solid var(--border-subtle); }
 .day-card-head {
   display: flex;
   justify-content: space-between;
@@ -1011,6 +1014,10 @@ table.runlog .row-action-btn {
 }
 table.runlog .row-action-btn:hover { color: var(--text-primary); background: var(--bg-elev-3); }
 table.runlog .row-action-btn svg { width: 14px; height: 14px; }
+.runlog th.sortable-col { cursor: pointer; user-select: none; }
+.runlog th.sortable-col:hover { color: var(--text-secondary); }
+.runlog th.sort-asc::after { content: ' ↑'; }
+.runlog th.sort-desc::after { content: ' ↓'; }
 
 /* Mobile run log → cards */
 .runlog-cards { display: none; flex-direction: column; gap: 10px; }
@@ -3087,7 +3094,7 @@ kbd {
     <section class="block">
       <div class="section-head">
         <div>
-          <div class="h2-eyebrow">My Week at a Glance</div>
+          <div class="h2-eyebrow" id="week-glance-eyebrow">My Week at a Glance</div>
           <h2 id="week-glance-title">This week's plan</h2>
         </div>
         <div style="display:flex;align-items:center;gap:0.5rem;">
@@ -3106,38 +3113,6 @@ kbd {
         </div>
       </div>
       <div id="metrics" class="metrics-grid"></div>
-    </section>
-
-    <section class="block">
-      <div class="section-head">
-        <div>
-          <div class="h2-eyebrow">Readiness Check</div>
-          <h2>Race readiness &amp; pace zones</h2>
-        </div>
-        <div class="head-aux">Composite score · pace targets derived from your goal</div>
-      </div>
-      <div id="readiness"></div>
-    </section>
-
-    <section class="block">
-      <div class="section-head">
-        <div>
-          <div class="h2-eyebrow">Race Day Forecast</div>
-          <h2>Pace explorer &amp; predictions</h2>
-        </div>
-      </div>
-      <div id="race-projector"></div>
-    </section>
-
-    <section class="block">
-      <div class="section-head">
-        <div>
-          <div class="h2-eyebrow">The Plan</div>
-          <h2>Effort budget</h2>
-        </div>
-        <div class="head-aux">Miles still in the bank · what's left to bank</div>
-      </div>
-      <div id="effort-budget"></div>
     </section>
 
     <section class="block">
@@ -3174,6 +3149,51 @@ kbd {
     <section class="block">
       <div class="section-head">
         <div>
+          <div class="h2-eyebrow">The Plan</div>
+          <h2>Effort budget</h2>
+        </div>
+        <div class="head-aux">Miles still in the bank · what's left to bank</div>
+      </div>
+      <div id="effort-budget"></div>
+    </section>
+
+    <section class="block">
+      <div class="section-head">
+        <div>
+          <div class="h2-eyebrow">The Coach</div>
+          <h2>Training intelligence</h2>
+        </div>
+        <div class="head-aux">Updates automatically as you log runs</div>
+      </div>
+      <div id="latest-run-card"></div>
+      <div id="trend-analytics" class="trend-grid"></div>
+      <div id="smart-insights" class="smart-insights"></div>
+    </section>
+
+    <section class="block">
+      <div class="section-head">
+        <div>
+          <div class="h2-eyebrow">Race Day Forecast</div>
+          <h2>Pace explorer &amp; predictions</h2>
+        </div>
+      </div>
+      <div id="race-projector"></div>
+    </section>
+
+    <section class="block">
+      <div class="section-head">
+        <div>
+          <div class="h2-eyebrow">Readiness Check</div>
+          <h2>Race readiness &amp; pace zones</h2>
+        </div>
+        <div class="head-aux">Composite score · pace targets derived from your goal</div>
+      </div>
+      <div id="readiness"></div>
+    </section>
+
+    <section class="block">
+      <div class="section-head">
+        <div>
           <div class="h2-eyebrow">Footwear</div>
           <h2>Shoe rotation &amp; performance</h2>
         </div>
@@ -3197,19 +3217,6 @@ kbd {
     <section class="block">
       <div class="section-head">
         <div>
-          <div class="h2-eyebrow">The Coach</div>
-          <h2>Training intelligence</h2>
-        </div>
-        <div class="head-aux">Updates automatically as you log runs</div>
-      </div>
-      <div id="latest-run-card"></div>
-      <div id="trend-analytics" class="trend-grid"></div>
-      <div id="smart-insights" class="smart-insights"></div>
-    </section>
-
-    <section class="block">
-      <div class="section-head">
-        <div>
           <div class="h2-eyebrow">Run Log</div>
           <h2>Every session, kept honest</h2>
         </div>
@@ -3220,17 +3227,17 @@ kbd {
           <thead>
             <tr>
               <th>Status</th>
-              <th>Planned</th>
+              <th class="sortable-col" data-sortcol="date" title="Sort by planned date">Planned</th>
               <th>Actual</th>
-              <th>Session</th>
+              <th class="sortable-col" data-sortcol="session" title="Sort by session name">Session</th>
               <th>Cat.</th>
               <th>Plan mi</th>
-              <th>Mi</th>
-              <th>Run Time</th>
-              <th>Pace</th>
-              <th>HR</th>
-              <th>Cad.</th>
-              <th>Elev ft</th>
+              <th class="sortable-col" data-sortcol="miles" title="Sort by actual miles">Mi</th>
+              <th class="sortable-col" data-sortcol="time" title="Sort by run time">Run Time</th>
+              <th class="sortable-col" data-sortcol="pace" title="Sort by pace">Pace</th>
+              <th class="sortable-col" data-sortcol="hr" title="Sort by HR">HR</th>
+              <th class="sortable-col" data-sortcol="cad" title="Sort by cadence">Cad.</th>
+              <th class="sortable-col" data-sortcol="elev" title="Sort by elevation">Elev ft</th>
               <th>Shoe</th>
               <th>Notes</th>
               <th data-edit-only></th>
@@ -3307,6 +3314,7 @@ kbd {
   let editingId = null;    // run log row being edited via modal
   let charts = {};         // canvas -> render fn
   let intervalRule = { warmup: 1, cooldown: 1, hardSeg: 0.5, easySeg: 0.5 };
+  let runLogSort = { col: 'date', dir: 'desc' };
 
   // ============================ Utils ============================
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -3890,6 +3898,26 @@ kbd {
       weekly[k] = (weekly[k] || 0) + (parseFloat(e.actualMiles) || 0);
     });
 
+    // Consistency streak: consecutive weeks where actual >= 80% of planned
+    const weekNums = [...new Set(state.entries.filter(e => !entryIsCross(e)).map(e => e.week).filter(Boolean))].sort((a,b) => a-b);
+    const today2 = todayLocal();
+    let streak = 0;
+    for (let wi = weekNums.length - 1; wi >= 0; wi--) {
+      const wn = weekNums[wi];
+      const wEntries = state.entries.filter(e => e.week === wn && !entryIsCross(e));
+      const wPlanned = wEntries.reduce((s, e) => s + (parseFloat(e.plannedMiles) || 0), 0);
+      const wActual = wEntries.filter(entryIsCompleted).reduce((s, e) => s + (parseFloat(e.actualMiles) || 0), 0);
+      // Skip the current in-progress week (has future planned entries)
+      const hasFuture = wEntries.some(e => {
+        const d = parseDateLocal(e.plannedDate);
+        return d && d > today2;
+      });
+      if (hasFuture) continue;
+      if (wPlanned === 0) continue;
+      if (wActual / wPlanned >= 0.8) streak++;
+      else break;
+    }
+
     return {
       completed, completedDesc, last5,
       totalCompletedMiles, totalPlannedMiles,
@@ -3899,7 +3927,8 @@ kbd {
       last5HrCount: last5Hr.length, last5CadCount: last5Cad.length, last5Count: last5.length,
       daysToRace, planPercent, weekly,
       hrCount: hrEntries.length, cadCount: cadEntries.length,
-      totalEntries, completedCount
+      totalEntries, completedCount,
+      streak
     };
   }
 
@@ -4394,6 +4423,13 @@ kbd {
       trainingWeek = upcoming.length ? upcoming[0].week : null;
     }
 
+    // Update eyebrow with training week number
+    const eyebrowEl = document.getElementById('week-glance-eyebrow');
+    if (eyebrowEl) {
+      const totalWeeks = state.entries.length ? Math.max(...state.entries.map(e => e.week || 0)) : 0;
+      eyebrowEl.textContent = trainingWeek && totalWeeks ? `Week ${trainingWeek} of ${totalWeeks}` : 'My Week at a Glance';
+    }
+
     const inWeekIds = new Set(inWeek.map(e => e.id));
     const weekEntries = trainingWeek != null
       ? state.entries.filter(e =>
@@ -4404,13 +4440,39 @@ kbd {
 
     weekEntries.sort((a, b) => a.plannedDate.localeCompare(b.plannedDate));
 
-    if (!weekEntries.length) {
-      wrap.appendChild(el('div', { class: 'empty' }, 'No sessions this week.'));
-      return;
-    }
+    // Build map of date-string → entry for the displayed week
+    const entryByDate = {};
+    weekEntries.forEach(e => { entryByDate[e.plannedDate] = e; });
 
-    weekEntries.forEach(e => {
-      const isToday = isSameDay(parseDateLocal(e.plannedDate), today);
+    // Show all 7 days of the displayed week, including rest days
+    for (let i = 0; i < 7; i++) {
+      const dayDate = new Date(start);
+      dayDate.setDate(start.getDate() + i);
+      const dateStr = [
+        String(dayDate.getFullYear()),
+        String(dayDate.getMonth() + 1).padStart(2, '0'),
+        String(dayDate.getDate()).padStart(2, '0'),
+      ].join('-');
+      const e = entryByDate[dateStr];
+      const isToday = isSameDay(dayDate, today);
+
+      if (!e) {
+        // Rest day
+        const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        const restCard = el('div', { class: `day-card rest-day ${isToday ? 'is-today' : ''}` });
+        restCard.innerHTML = `
+          <div class="day-card-head">
+            <div class="day-name">${dayNames[dayDate.getDay()]}</div>
+            <div class="day-date">${fmtMonthDay(dateStr)}</div>
+          </div>
+          <div class="day-session rest-label">Rest</div>
+          <div class="day-line"><span></span><span></span></div>
+          <div class="day-status"><span class="status-pill rest">Rest</span></div>`;
+        wrap.appendChild(restCard);
+        continue;
+      }
+
+      // Existing entry rendering
       const isCompleted = entryIsCompleted(e);
       const status = isCompleted ? 'completed' : (isToday ? 'upcoming' : 'planned');
       const card = el('div', { class: `day-card ${isToday ? 'is-today' : ''} ${isCompleted ? 'is-completed' : ''}` });
@@ -4435,29 +4497,20 @@ kbd {
         });
       }
       wrap.appendChild(card);
-    });
+    }
   }
 
   function renderMetrics(stats) {
     const wrap = $('#metrics');
     wrap.innerHTML = '';
 
-    const note5Hr = stats.last5Count > 0 && stats.last5HrCount < stats.last5Count ? `${stats.last5HrCount} of last ${stats.last5Count} with HR` : (stats.last5HrCount === stats.last5Count && stats.last5Count > 0 ? `Across last ${stats.last5Count} runs` : 'No data yet');
-    const note5Cad = stats.last5Count > 0 && stats.last5CadCount < stats.last5Count ? `${stats.last5CadCount} of last ${stats.last5Count} with cadence` : (stats.last5CadCount === stats.last5Count && stats.last5Count > 0 ? `Across last ${stats.last5Count} runs` : 'No data yet');
-
     const tiles = [
-      // Top row
       { label: 'Days to race', value: stats.daysToRace ?? '—', unit: stats.daysToRace !== null ? 'days' : '', sub: stats.daysToRace !== null ? `Race ${fmtDate(state.goal.raceDate)}` : 'No date set', bar: stats.planPercent },
-      { label: 'Completed miles', value: stats.totalCompletedMiles.toFixed(1), unit: 'mi', sub: `${(stats.totalPlannedMiles).toFixed(1)} mi planned · ${(stats.planPercent).toFixed(0)}%`, bar: stats.planPercent },
+      { label: 'Miles banked', value: stats.totalCompletedMiles.toFixed(1), unit: 'mi', sub: `of ${stats.totalPlannedMiles.toFixed(1)} planned · ${stats.planPercent.toFixed(0)}% done`, bar: stats.planPercent },
       { label: 'Longest run', value: stats.longest ? stats.longest.miles.toFixed(2) : '—', unit: stats.longest ? 'mi' : '', sub: stats.longest ? fmtMonthDay(stats.longest.entry.actualDate) : 'No long runs yet' },
-      // Second row
-      { label: 'Average pace', value: stats.avgPace ? fmtPace(stats.avgPace).replace('/mi','') : '—', unit: '/mi', sub: `Across ${stats.completedCount} run${stats.completedCount === 1 ? '' : 's'}` },
-      { label: 'Average HR', value: stats.avgHr ? Math.round(stats.avgHr) : '—', unit: stats.avgHr ? 'bpm' : '', sub: `${stats.hrCount} run${stats.hrCount === 1 ? '' : 's'} with HR` },
-      { label: 'Average cadence', value: stats.avgCad ? Math.round(stats.avgCad) : '—', unit: stats.avgCad ? 'spm' : '', sub: `${stats.cadCount} run${stats.cadCount === 1 ? '' : 's'} with cadence` },
-      // Third row
-      { label: 'Last 5 · pace', value: stats.last5Pace ? fmtPace(stats.last5Pace).replace('/mi','') : '—', unit: '/mi', sub: stats.last5Count > 0 ? `Across last ${stats.last5Count} run${stats.last5Count === 1 ? '' : 's'}` : 'No data yet' },
-      { label: 'Last 5 · HR', value: stats.last5HrAvg ? Math.round(stats.last5HrAvg) : '—', unit: stats.last5HrAvg ? 'bpm' : '', sub: note5Hr },
-      { label: 'Last 5 · cadence', value: stats.last5CadAvg ? Math.round(stats.last5CadAvg) : '—', unit: stats.last5CadAvg ? 'spm' : '', sub: note5Cad },
+      { label: 'Avg pace', value: stats.avgPace ? fmtPace(stats.avgPace).replace('/mi','') : '—', unit: '/mi', sub: `Across ${stats.completedCount} run${stats.completedCount === 1 ? '' : 's'}` },
+      { label: 'Avg heart rate', value: stats.avgHr ? Math.round(stats.avgHr) : '—', unit: stats.avgHr ? 'bpm' : '', sub: `${stats.hrCount} run${stats.hrCount === 1 ? '' : 's'} with HR data` },
+      { label: 'Consistency', value: stats.streak, unit: stats.streak === 1 ? 'week streak' : 'week streak', sub: stats.streak > 0 ? '≥80% of planned miles hit' : 'Keep showing up' },
     ];
 
     tiles.forEach((t, i) => {
@@ -4801,99 +4854,6 @@ kbd {
       wrap.appendChild(raceStrip);
     }
 
-    // Smart guidance
-    const guidance = [];
-    const easy = buckets.find(b => b.id === 'easy');
-    const long = buckets.find(b => b.id === 'long');
-    const quality = buckets.find(b => b.id === 'quality');
-
-    // Quality work behind?
-    if (quality && quality.percent < 25 && days > 28 && quality.planned > 5) {
-      guidance.push({
-        icon: 'compass',
-        text: `<strong>Quality work behind</strong> — ${quality.completed.toFixed(1)} of ${quality.planned.toFixed(1)} planned quality miles banked (${quality.percent.toFixed(0)}%). Schedule one quality session per week through the build.`
-      });
-    } else if (quality && quality.percent >= 25 && quality.percent < 60 && days > 14 && quality.completedRuns >= 1) {
-      guidance.push({
-        icon: 'check',
-        text: `Quality work on track — ${quality.completedRuns} of ${quality.plannedRuns} sessions logged (${quality.completed.toFixed(1)} mi). Keep the cadence.`
-      });
-    }
-
-    // Easy / aerobic dominance check (should be ~70-80% of volume)
-    if (easy && long && quality) {
-      const totalQ = quality.completed;
-      const totalE = easy.completed;
-      const totalL = long.completed;
-      const totalAll = totalQ + totalE + totalL;
-      if (totalAll > 20) {
-        const easyPct = (totalE + totalL) / totalAll * 100;
-        const qualityPct = totalQ / totalAll * 100;
-        if (qualityPct > 25) {
-          guidance.push({
-            icon: 'alert',
-            text: `<strong>${qualityPct.toFixed(0)}% of completed miles are quality work</strong>. Marathon training thrives at 80/20 — most miles should be conversational.`
-          });
-        } else if (easyPct >= 75 && totalQ > 0) {
-          guidance.push({
-            icon: 'check',
-            text: `Easy/aerobic miles make up <strong>${easyPct.toFixed(0)}%</strong> of completed work. Classic 80/20 distribution.`
-          });
-        }
-      }
-    }
-
-    // Long run progression
-    if (long && long.remainingRuns > 0) {
-      const remainingLongRuns = state.entries
-        .filter(e => {
-          const c = (e.category || '').toLowerCase();
-          return (c === 'long' || c.includes('long')) && !entryIsCompleted(e);
-        })
-        .map(e => parseFloat(e.plannedMiles) || 0);
-      const peakRemaining = remainingLongRuns.length ? Math.max(...remainingLongRuns) : 0;
-      if (peakRemaining >= 18) {
-        guidance.push({
-          icon: 'mountain',
-          text: `Peak long run remaining: <strong>${peakRemaining} mi</strong>. Build toward this carefully — fuel like a race.`
-        });
-      }
-    }
-
-    // Race-week countdown
-    if (days > 0 && days <= 14) {
-      guidance.push({
-        icon: 'flag',
-        text: `<strong>${days} days out</strong> — taper week. Volume should drop ~30%; intensity stays sharp.`
-      });
-    }
-
-    // Pace required check
-    if (weeklyAvg > 0) {
-      const recentWeeks = Object.values(stats.weekly || {}).filter(v => v > 0);
-      const recentAvg = recentWeeks.length ? recentWeeks.reduce((s, v) => s + v, 0) / recentWeeks.length : 0;
-      if (recentAvg > 0 && weeklyAvg > recentAvg * 1.4) {
-        guidance.push({
-          icon: 'alert',
-          text: `Required pace is <strong>${weeklyAvg.toFixed(1)} mi/wk</strong> but you've averaged <strong>${recentAvg.toFixed(1)} mi/wk</strong>. Catching up may risk overuse — consider adjusting goals if needed.`
-        });
-      } else if (recentAvg > 0 && Math.abs(weeklyAvg - recentAvg) / recentAvg < 0.2) {
-        guidance.push({
-          icon: 'check',
-          text: `Required pace (<strong>${weeklyAvg.toFixed(1)} mi/wk</strong>) matches your recent average (<strong>${recentAvg.toFixed(1)} mi/wk</strong>). On rhythm.`
-        });
-      }
-    }
-
-    if (guidance.length) {
-      const guidanceEl = el('div', { class: 'budget-guidance' });
-      guidance.forEach(g => {
-        const item = el('div', { class: 'budget-guidance-item' });
-        item.innerHTML = `<div class="budget-guidance-icon">${ICONS[g.icon] || ICONS.info}</div><div class="budget-guidance-text">${g.text}</div>`;
-        guidanceEl.appendChild(item);
-      });
-      wrap.appendChild(guidanceEl);
-    }
   }
 
   // ============================ Training Intelligence ============================
@@ -5873,7 +5833,22 @@ kbd {
     else if (activeFilter === 'quality') entries = entries.filter(e => /quality|race/i.test(e.category));
     else if (activeFilter === 'easy') entries = entries.filter(e => /easy/i.test(e.category));
 
-    entries.sort((a, b) => effectiveDate(b).localeCompare(effectiveDate(a)));
+    entries.sort((a, b) => {
+      let av, bv;
+      switch (runLogSort.col) {
+        case 'date':    av = a.plannedDate || ''; bv = b.plannedDate || ''; break;
+        case 'session': av = a.session || ''; bv = b.session || ''; break;
+        case 'miles':   av = parseFloat(a.actualMiles) || 0; bv = parseFloat(b.actualMiles) || 0; break;
+        case 'time':    av = parseTimeToSec(a.runTime) || 0; bv = parseTimeToSec(b.runTime) || 0; break;
+        case 'pace':    av = paceFromEntry(a) || 9999; bv = paceFromEntry(b) || 9999; break;
+        case 'hr':      av = parseFloat(a.avgHr) || 0; bv = parseFloat(b.avgHr) || 0; break;
+        case 'cad':     av = parseFloat(a.avgCadence) || 0; bv = parseFloat(b.avgCadence) || 0; break;
+        case 'elev':    av = parseFloat(a.elevationGainFt) || 0; bv = parseFloat(b.elevationGainFt) || 0; break;
+        default:        av = a.plannedDate || ''; bv = b.plannedDate || '';
+      }
+      const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+      return runLogSort.dir === 'asc' ? cmp : -cmp;
+    });
 
     if (!entries.length) {
       wrap.appendChild(el('tr', {}, el('td', { colspan: 12, class: 'empty', style: { padding: '40px' } }, 'No runs match the current filter.')));
@@ -5968,6 +5943,26 @@ kbd {
         if (entry) openRunDetail(entry);
       }));
     }
+
+    // Sortable column click handlers
+    $$('th[data-sortcol]').forEach(th => {
+      const col = th.dataset.sortcol;
+      th.style.cursor = 'pointer';
+      // Show indicator
+      th.querySelector('.sort-indicator')?.remove();
+      if (runLogSort.col === col) {
+        th.insertAdjacentHTML('beforeend', `<span class="sort-indicator">${runLogSort.dir === 'asc' ? ' ↑' : ' ↓'}</span>`);
+      }
+      th.addEventListener('click', () => {
+        if (runLogSort.col === col) {
+          runLogSort.dir = runLogSort.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          runLogSort.col = col;
+          runLogSort.dir = 'desc';
+        }
+        renderRunLog();
+      });
+    });
 
     // Apply read-only visibility on action col header
     $$('[data-edit-only]').forEach(n => {
