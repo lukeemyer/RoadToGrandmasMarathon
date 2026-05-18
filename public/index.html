@@ -3935,18 +3935,28 @@ kbd {
   }
 
   // Fuzzy-match a Strava gear name to the nearest configured shoe name.
-  // Score = fraction of configured shoe's tokens that appear in the Strava name.
-  // Requires >= 50% overlap; returns the original string if no shoe qualifies.
   function resolveShoe(stravaName) {
     if (!stravaName) return stravaName;
     const shoes = (state && state.shoes) || [];
     if (!shoes.length) return stravaName;
     if (shoes.some(s => s.name === stravaName)) return stravaName;
+
+    const compact = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const stravaCompact = compact(stravaName);
+
+    // Pass 1: compact substring match — handles "ASICS Superblast 3" ↔ "SuperBlast3"
+    // Sort longest first so "superblast3" beats a hypothetical shorter "super" shoe.
+    const byLength = [...shoes].sort((a, b) => compact(b.name).length - compact(a.name).length);
+    for (const s of byLength) {
+      if (stravaCompact.includes(compact(s.name))) return s.name;
+    }
+
+    // Pass 2: token-based fuzzy match for unusual naming
     function tok(s) {
       return s
-        .replace(/([a-z])([A-Z])/g, '$1 $2')  // camelCase: SuperBlast → Super Blast
-        .replace(/([a-zA-Z])(\d)/g, '$1 $2')  // letter→digit: Nimbus28 → Nimbus 28
-        .replace(/(\d)([a-zA-Z])/g, '$1 $2')  // digit→letter: 3X → 3 X
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+        .replace(/(\d)([a-zA-Z])/g, '$1 $2')
         .toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
     }
     const stravaSet = new Set(tok(stravaName));
