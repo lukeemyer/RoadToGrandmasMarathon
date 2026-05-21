@@ -195,14 +195,14 @@ export default async function handler(req, res) {
     added++;
   });
 
-  // Patch existing runs (gear names)
+  // Patch existing runs (gear names) — always sync from gear cache so a shoe
+  // assigned after the webhook fired (or changed in Strava) gets corrected.
   for (const a of stravaRuns) {
     const existing = blobRuns.find(r => r.stravaActivityId === a.id);
     if (!existing) continue;
-    if (!existing.shoe) {
-      const shoeName = a.gear?.name || gearMap.get(a.gear_id) || "";
-      if (shoeName) { existing.shoe = shoeName; gearPatched++; }
-    }
+    if (!a.gear_id) continue; // no shoe on this activity — leave whatever is stored
+    const shoeName = a.gear?.name || gearMap.get(a.gear_id) || "";
+    if (shoeName && existing.shoe !== shoeName) { existing.shoe = shoeName; gearPatched++; }
   }
 
   // Save new runs immediately — don't let backfill delay block them
