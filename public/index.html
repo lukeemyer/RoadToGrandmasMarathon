@@ -359,10 +359,10 @@ a:hover { text-decoration: underline; }
 /* ── Running dude ── */
 .runner-dude {
   position: absolute;
-  bottom: 100%;          /* feet sit exactly on the hero top border */
+  bottom: 100%;           /* feet on the hero top border */
   left: 14px;
-  width: 22px;
-  height: 33px;
+  width: 28px;
+  height: 42px;
   pointer-events: none;
   z-index: 4;
   animation:
@@ -371,7 +371,7 @@ a:hover { text-decoration: underline; }
 }
 @keyframes rg-move {
   from { left: 14px; }
-  to   { left: calc(100% - 36px); }
+  to   { left: calc(100% - 42px); }
 }
 @keyframes rg-dir {
   0%  { transform: scaleX(1);  }
@@ -381,15 +381,13 @@ a:hover { text-decoration: underline; }
   display: block;
   width: 100%;
   height: 100%;
-  color: var(--accent);
   overflow: visible;
-  filter: drop-shadow(0 0 3px var(--accent-glow));
 }
-/* 2-frame stride cycle — poses toggle at ~180 steps/min */
+/* 2-frame stride at ~200 steps/min */
 @keyframes rg-on  { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
 @keyframes rg-off { 0%, 49.9% { opacity: 0; } 50%, 100% { opacity: 1; } }
-.rg-pose-a { animation: rg-on  0.32s linear infinite; }
-.rg-pose-b { animation: rg-off 0.32s linear infinite; }
+.rg-pose-a { animation: rg-on  0.30s linear infinite; }
+.rg-pose-b { animation: rg-off 0.30s linear infinite; }
 
 @media (max-width: 880px) {
   .hero { padding: 28px 24px; }
@@ -4299,32 +4297,60 @@ kbd {
     const hero = $('#hero');
     hero.innerHTML = '';
 
-    // Running dude — feet on the hero top border, two-pose stride cycle
+    // Running dude — proper clothed figure, feet on hero top border
+    // Two poses create a stride cycle: flight (knee high) ↔ landing (foot down)
+    // Layer order within each pose: back leg → back arm → torso/shorts → front arm → front leg → head
     const runnerDude = el('div', { class: 'runner-dude' });
-    runnerDude.innerHTML = `<svg class="runner-svg" viewBox="0 0 20 30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-      <!--
-        Pose A: flight phase — left leg driving forward (knee high), right leg pushing off,
-                right arm forward (contralateral), left arm swinging back. Body at neutral height.
-      -->
+    runnerDude.innerHTML = `<svg class="runner-svg" viewBox="0 0 20 30" fill="none" stroke-linecap="round" stroke-linejoin="round">
+
+      <!-- POSE A: right leg forward (high knee drive), left arm forward, flight phase -->
       <g class="rg-pose-a">
-        <circle cx="9.5" cy="2.5" r="1.8" fill="currentColor" stroke="none"/>
-        <line x1="9.5" y1="4.3" x2="10" y2="14"/>
-        <polyline points="10,7.5 13.5,11.5 14.8,8.5"/>
-        <polyline points="10,7.5 6.5,11.5 5.5,15"/>
-        <polyline points="10,14 13.8,17.5 12.5,23"/>
-        <polyline points="10,14 6.5,20 4.5,26"/>
+        <!-- back leg: left thigh (shorts) → shin (skin) → shoe -->
+        <line x1="9" y1="15" x2="5.5" y2="21.5" stroke="#334155" stroke-width="2.8"/>
+        <line x1="5.5" y1="21.5" x2="4" y2="27" stroke="#F4A261" stroke-width="2.3"/>
+        <line x1="2.5" y1="26.5" x2="5.5" y2="27.5" stroke="#0f172a" stroke-width="2.5"/>
+        <!-- back arm: right upper (shirt) → forearm (skin), swinging back+down -->
+        <line x1="10.5" y1="9" x2="7.5" y2="12" stroke="var(--accent)" stroke-width="2.3"/>
+        <line x1="7.5" y1="12" x2="6.5" y2="15" stroke="#F4A261" stroke-width="1.9"/>
+        <!-- torso: shirt, slight forward lean -->
+        <line x1="10.5" y1="6.5" x2="9" y2="15" stroke="var(--accent)" stroke-width="3.8"/>
+        <!-- shorts at hip -->
+        <line x1="9" y1="13.5" x2="9" y2="16.5" stroke="#334155" stroke-width="5.2"/>
+        <!-- front arm: left upper (shirt) → forearm (skin), elbow bent 90° upward -->
+        <line x1="10.5" y1="9" x2="13.5" y2="11.5" stroke="var(--accent)" stroke-width="2.3"/>
+        <line x1="13.5" y1="11.5" x2="14.5" y2="8.5" stroke="#F4A261" stroke-width="1.9"/>
+        <!-- front leg: right thigh (shorts) → shin (skin) → shoe, high knee drive -->
+        <line x1="9" y1="15" x2="12.5" y2="17" stroke="#334155" stroke-width="2.8"/>
+        <line x1="12.5" y1="17" x2="14" y2="22.5" stroke="#F4A261" stroke-width="2.3"/>
+        <line x1="13" y1="23.5" x2="16" y2="23" stroke="#0f172a" stroke-width="2.5"/>
+        <!-- head + hair -->
+        <circle cx="10.5" cy="3.5" r="2.6" fill="#F4A261" stroke="none"/>
+        <path d="M7.9,3 Q10.5,0.8 13.1,3" stroke="#5C3D2E" stroke-width="1.6" fill="none"/>
       </g>
-      <!--
-        Pose B: landing phase — right leg coming down (foot near ground), left leg toeing off,
-                left arm forward (contralateral), right arm swinging back. Body 1 unit lower.
-      -->
+
+      <!-- POSE B: left leg forward (landing), right arm forward, body 0.5 lower -->
       <g class="rg-pose-b">
-        <circle cx="9.5" cy="3.5" r="1.8" fill="currentColor" stroke="none"/>
-        <line x1="9.5" y1="5.3" x2="10" y2="15"/>
-        <polyline points="10,8.5 13.5,12.5 14.8,9.5"/>
-        <polyline points="10,8.5 6.5,12.5 5.5,16"/>
-        <polyline points="10,15 13,19.5 12,26"/>
-        <polyline points="10,15 7,21 5.5,27"/>
+        <!-- back leg: right thigh (shorts) → shin (skin) → shoe, toe-off -->
+        <line x1="9" y1="15.5" x2="5" y2="22" stroke="#334155" stroke-width="2.8"/>
+        <line x1="5" y1="22" x2="3.5" y2="27.5" stroke="#F4A261" stroke-width="2.3"/>
+        <line x1="2" y1="27" x2="5" y2="28" stroke="#0f172a" stroke-width="2.5"/>
+        <!-- back arm: left upper (shirt) → forearm (skin), swinging back -->
+        <line x1="10.5" y1="9.5" x2="7.5" y2="12.5" stroke="var(--accent)" stroke-width="2.3"/>
+        <line x1="7.5" y1="12.5" x2="6.5" y2="15.5" stroke="#F4A261" stroke-width="1.9"/>
+        <!-- torso -->
+        <line x1="10.5" y1="7" x2="9" y2="15.5" stroke="var(--accent)" stroke-width="3.8"/>
+        <!-- shorts -->
+        <line x1="9" y1="14" x2="9" y2="17" stroke="#334155" stroke-width="5.2"/>
+        <!-- front arm: right upper (shirt) → forearm (skin), elbow bent 90° upward -->
+        <line x1="10.5" y1="9.5" x2="13.5" y2="12" stroke="var(--accent)" stroke-width="2.3"/>
+        <line x1="13.5" y1="12" x2="14.5" y2="9" stroke="#F4A261" stroke-width="1.9"/>
+        <!-- front leg: left thigh (shorts) → shin (skin) → shoe, coming to land -->
+        <line x1="9" y1="15.5" x2="13" y2="19" stroke="#334155" stroke-width="2.8"/>
+        <line x1="13" y1="19" x2="14.5" y2="24.5" stroke="#F4A261" stroke-width="2.3"/>
+        <line x1="13.5" y1="25.5" x2="16.5" y2="25" stroke="#0f172a" stroke-width="2.5"/>
+        <!-- head + hair -->
+        <circle cx="10.5" cy="4" r="2.6" fill="#F4A261" stroke="none"/>
+        <path d="M7.9,3.5 Q10.5,1.3 13.1,3.5" stroke="#5C3D2E" stroke-width="1.6" fill="none"/>
       </g>
     </svg>`;
     hero.appendChild(runnerDude);
