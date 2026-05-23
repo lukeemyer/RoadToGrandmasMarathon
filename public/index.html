@@ -359,21 +359,21 @@ a:hover { text-decoration: underline; }
 /* ── Running dude ── */
 .runner-dude {
   position: absolute;
-  top: -20px;
-  left: 0;
-  width: 32px;
-  height: 44px;
+  bottom: 100%;          /* feet sit exactly on the hero top border */
+  left: 14px;
+  width: 22px;
+  height: 33px;
   pointer-events: none;
   z-index: 4;
   animation:
-    runner-move 6s linear infinite alternate,
-    runner-flip 12s steps(1, end) infinite;
+    rg-move 6s linear infinite alternate,
+    rg-dir  12s steps(1, end) infinite;
 }
-@keyframes runner-move {
+@keyframes rg-move {
   from { left: 14px; }
-  to   { left: calc(100% - 44px); }
+  to   { left: calc(100% - 36px); }
 }
-@keyframes runner-flip {
+@keyframes rg-dir {
   0%  { transform: scaleX(1);  }
   50% { transform: scaleX(-1); }
 }
@@ -382,35 +382,14 @@ a:hover { text-decoration: underline; }
   width: 100%;
   height: 100%;
   color: var(--accent);
-  opacity: 0.9;
   overflow: visible;
-  animation: runner-bounce 0.28s ease-in-out infinite alternate;
-  filter: drop-shadow(0 1px 4px var(--accent-glow));
+  filter: drop-shadow(0 0 3px var(--accent-glow));
 }
-@keyframes runner-bounce {
-  from { transform: translateY(0px);  }
-  to   { transform: translateY(-3px); }
-}
-.runner-svg .run-arm-l {
-  transform-box: fill-box; transform-origin: 100% 0%;
-  animation: run-arm-l 0.28s ease-in-out infinite alternate;
-}
-.runner-svg .run-arm-r {
-  transform-box: fill-box; transform-origin: 0% 0%;
-  animation: run-arm-r 0.28s ease-in-out infinite alternate;
-}
-.runner-svg .run-leg-l {
-  transform-box: fill-box; transform-origin: 100% 0%;
-  animation: run-leg-l 0.28s ease-in-out infinite alternate;
-}
-.runner-svg .run-leg-r {
-  transform-box: fill-box; transform-origin: 0% 0%;
-  animation: run-leg-r 0.28s ease-in-out infinite alternate;
-}
-@keyframes run-arm-l { from { transform: rotate(-30deg); } to { transform: rotate(35deg);  } }
-@keyframes run-arm-r { from { transform: rotate(35deg);  } to { transform: rotate(-30deg); } }
-@keyframes run-leg-l { from { transform: rotate(-35deg); } to { transform: rotate(40deg);  } }
-@keyframes run-leg-r { from { transform: rotate(40deg);  } to { transform: rotate(-35deg); } }
+/* 2-frame stride cycle — poses toggle at ~180 steps/min */
+@keyframes rg-on  { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes rg-off { 0%, 49.9% { opacity: 0; } 50%, 100% { opacity: 1; } }
+.rg-pose-a { animation: rg-on  0.32s linear infinite; }
+.rg-pose-b { animation: rg-off 0.32s linear infinite; }
 
 @media (max-width: 880px) {
   .hero { padding: 28px 24px; }
@@ -4320,15 +4299,33 @@ kbd {
     const hero = $('#hero');
     hero.innerHTML = '';
 
-    // Running dude — straddling the top edge of the hero card
+    // Running dude — feet on the hero top border, two-pose stride cycle
     const runnerDude = el('div', { class: 'runner-dude' });
-    runnerDude.innerHTML = `<svg class="runner-svg" viewBox="0 0 24 36" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="4" r="3.2" fill="currentColor" stroke="none"/>
-      <line x1="12" y1="7.2" x2="11.2" y2="20"/>
-      <line class="run-arm-l" x1="11.5" y1="11.5" x2="4.5" y2="17"/>
-      <line class="run-arm-r" x1="11.5" y1="11.5" x2="18.5" y2="17"/>
-      <line class="run-leg-l" x1="11.2" y1="20" x2="6"    y2="32"/>
-      <line class="run-leg-r" x1="11.2" y1="20" x2="16.4" y2="32"/>
+    runnerDude.innerHTML = `<svg class="runner-svg" viewBox="0 0 20 30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <!--
+        Pose A: flight phase — left leg driving forward (knee high), right leg pushing off,
+                right arm forward (contralateral), left arm swinging back. Body at neutral height.
+      -->
+      <g class="rg-pose-a">
+        <circle cx="9.5" cy="2.5" r="1.8" fill="currentColor" stroke="none"/>
+        <line x1="9.5" y1="4.3" x2="10" y2="14"/>
+        <polyline points="10,7.5 13.5,11.5 14.8,8.5"/>
+        <polyline points="10,7.5 6.5,11.5 5.5,15"/>
+        <polyline points="10,14 13.8,17.5 12.5,23"/>
+        <polyline points="10,14 6.5,20 4.5,26"/>
+      </g>
+      <!--
+        Pose B: landing phase — right leg coming down (foot near ground), left leg toeing off,
+                left arm forward (contralateral), right arm swinging back. Body 1 unit lower.
+      -->
+      <g class="rg-pose-b">
+        <circle cx="9.5" cy="3.5" r="1.8" fill="currentColor" stroke="none"/>
+        <line x1="9.5" y1="5.3" x2="10" y2="15"/>
+        <polyline points="10,8.5 13.5,12.5 14.8,9.5"/>
+        <polyline points="10,8.5 6.5,12.5 5.5,16"/>
+        <polyline points="10,15 13,19.5 12,26"/>
+        <polyline points="10,15 7,21 5.5,27"/>
+      </g>
     </svg>`;
     hero.appendChild(runnerDude);
 
