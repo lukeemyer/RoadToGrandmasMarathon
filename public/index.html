@@ -253,7 +253,7 @@ a:hover { text-decoration: underline; }
   padding: 36px 36px 30px;
   margin-bottom: 32px;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 .hero::before {
   content: '';
@@ -355,6 +355,62 @@ a:hover { text-decoration: underline; }
   margin-top: 8px;
   letter-spacing: 0.05em;
 }
+
+/* ── Running dude ── */
+.runner-dude {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  width: 32px;
+  height: 44px;
+  pointer-events: none;
+  z-index: 4;
+  animation:
+    runner-move 6s linear infinite alternate,
+    runner-flip 12s steps(1, end) infinite;
+}
+@keyframes runner-move {
+  from { left: 14px; }
+  to   { left: calc(100% - 44px); }
+}
+@keyframes runner-flip {
+  0%  { transform: scaleX(1);  }
+  50% { transform: scaleX(-1); }
+}
+.runner-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--accent);
+  opacity: 0.9;
+  overflow: visible;
+  animation: runner-bounce 0.28s ease-in-out infinite alternate;
+  filter: drop-shadow(0 1px 4px var(--accent-glow));
+}
+@keyframes runner-bounce {
+  from { transform: translateY(0px);  }
+  to   { transform: translateY(-3px); }
+}
+.runner-svg .run-arm-l {
+  transform-box: fill-box; transform-origin: 100% 0%;
+  animation: run-arm-l 0.28s ease-in-out infinite alternate;
+}
+.runner-svg .run-arm-r {
+  transform-box: fill-box; transform-origin: 0% 0%;
+  animation: run-arm-r 0.28s ease-in-out infinite alternate;
+}
+.runner-svg .run-leg-l {
+  transform-box: fill-box; transform-origin: 100% 0%;
+  animation: run-leg-l 0.28s ease-in-out infinite alternate;
+}
+.runner-svg .run-leg-r {
+  transform-box: fill-box; transform-origin: 0% 0%;
+  animation: run-leg-r 0.28s ease-in-out infinite alternate;
+}
+@keyframes run-arm-l { from { transform: rotate(-30deg); } to { transform: rotate(35deg);  } }
+@keyframes run-arm-r { from { transform: rotate(35deg);  } to { transform: rotate(-30deg); } }
+@keyframes run-leg-l { from { transform: rotate(-35deg); } to { transform: rotate(40deg);  } }
+@keyframes run-leg-r { from { transform: rotate(40deg);  } to { transform: rotate(-35deg); } }
 
 @media (max-width: 880px) {
   .hero { padding: 28px 24px; }
@@ -4263,6 +4319,18 @@ kbd {
   function renderHero(stats) {
     const hero = $('#hero');
     hero.innerHTML = '';
+
+    // Running dude — straddling the top edge of the hero card
+    const runnerDude = el('div', { class: 'runner-dude' });
+    runnerDude.innerHTML = `<svg class="runner-svg" viewBox="0 0 24 36" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="4" r="3.2" fill="currentColor" stroke="none"/>
+      <line x1="12" y1="7.2" x2="11.2" y2="20"/>
+      <line class="run-arm-l" x1="11.5" y1="11.5" x2="4.5" y2="17"/>
+      <line class="run-arm-r" x1="11.5" y1="11.5" x2="18.5" y2="17"/>
+      <line class="run-leg-l" x1="11.2" y1="20" x2="6"    y2="32"/>
+      <line class="run-leg-r" x1="11.2" y1="20" x2="16.4" y2="32"/>
+    </svg>`;
+    hero.appendChild(runnerDude);
 
     const grid = el('div', { class: 'hero-grid' });
     const left = el('div', { class: 'hero-left' });
