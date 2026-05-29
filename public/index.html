@@ -3571,11 +3571,11 @@ kbd {
       const dateDiff = Math.round((crDate - slotDate) / 86400000);
       if (dateDiff < -1 || dateDiff > 4) return null; // outside acceptable window
       const milesDiff = Math.abs(crMiles - slotMiles);
-      // Running early is penalised slightly more than running late.
-      // Miles penalty is lower than date penalty so a nearby slot with matching
-      // miles still beats a same-day slot with very different miles (skip detection).
+      // milesPenalty (12/mi) > datePenalty (10/day) so a 1-mile distance mismatch
+      // outweighs a same-day advantage — e.g. a 6mi run logged a day late correctly
+      // beats a same-day 5mi easy slot even though date penalty = 0.
       const datePenalty = dateDiff >= 0 ? dateDiff * 10 : (-dateDiff) * 14;
-      const milesPenalty = milesDiff * 7;
+      const milesPenalty = milesDiff * 12;
       const score = 100 - datePenalty - milesPenalty;
       return score > 25 ? score : null; // minimum threshold to accept a match
     }
@@ -3619,7 +3619,11 @@ kbd {
       const filledSlotIds = new Set();
 
       for (const cr of sorted) {
-        // Already properly housed in a non-cloud_ plan slot — nothing to do
+        const crDate = parseDateLocal(cr.actualDate);
+        const crMiles = parseFloat(cr.actualMiles) || 0;
+
+        // Already housed in a non-cloud_ plan slot — check if a better slot exists
+        // (handles runs that were misassigned on a previous sync due to date ties)
         const inPlanSlot = state.entries.find(e =>
           !e.id?.startsWith('cloud_') && entryIsCompleted(e) &&
           ((cr.stravaActivityId && e.stravaActivityId === cr.stravaActivityId) ||
@@ -3627,10 +3631,51 @@ kbd {
              Math.abs((parseFloat(e.actualMiles) || 0) - (parseFloat(cr.actualMiles) || 0)) < 0.05 &&
              (e.runTime === cr.runTime || (e.source && e.source.includes('Apple')))))
         );
-        if (inPlanSlot) continue;
-
-        const crDate = parseDateLocal(cr.actualDate);
-        const crMiles = parseFloat(cr.actualMiles) || 0;
+        if (inPlanSlot) {
+          // See if a better-scoring slot is available (run may have been misassigned)
+          const currentScore = scoreMatch(crMiles, crDate,
+            parseFloat(inPlanSlot.plannedMiles) || 0, parseDateLocal(inPlanSlot.plannedDate)) ?? 0;
+          let bestAlt = null, bestAltScore = currentScore;
+          for (const slot of state.entries) {
+            if (slot === inPlanSlot || filledSlotIds.has(slot.id)) continue;
+            if (entryIsCompleted(slot) || entryIsCross(slot)) continue;
+            const slotDate = parseDateLocal(slot.plannedDate);
+            if (!slotDate) continue;
+            const s = scoreMatch(crMiles, crDate, parseFloat(slot.plannedMiles) || 0, slotDate);
+            if (s !== null && s > bestAltScore + 1) { bestAltScore = s; bestAlt = slot; }
+          }
+          if (bestAlt) {
+            // Reset the wrong slot back to planned state
+            const origSlot = ORIGINAL_DATA.entries.find(e => e.id === inPlanSlot.id);
+            inPlanSlot.status = 'Planned';
+            inPlanSlot.actualDate = origSlot?.actualDate ?? '';
+            inPlanSlot.actualMiles = origSlot?.actualMiles ?? null;
+            inPlanSlot.runTime = origSlot?.runTime ?? '';
+            inPlanSlot.avgHr = origSlot?.avgHr ?? '';
+            inPlanSlot.avgCadence = origSlot?.avgCadence ?? '';
+            inPlanSlot.elevationGainFt = origSlot?.elevationGainFt ?? '';
+            inPlanSlot.source = origSlot?.source ?? '';
+            inPlanSlot.notes = origSlot?.notes ?? '';
+            delete inPlanSlot.stravaActivityId;
+            delete inPlanSlot.laps;
+            // Fill the better slot
+            filledSlotIds.add(bestAlt.id);
+            bestAlt.status = 'Completed';
+            bestAlt.actualDate = cr.actualDate;
+            bestAlt.actualMiles = crMiles || bestAlt.actualMiles;
+            bestAlt.runTime = cr.runTime || bestAlt.runTime;
+            bestAlt.avgHr = cr.avgHr || bestAlt.avgHr;
+            bestAlt.avgCadence = cr.avgCadence || bestAlt.avgCadence;
+            bestAlt.elevationGainFt = cr.elevationGainFt || bestAlt.elevationGainFt;
+            bestAlt.shoe = resolveShoe(cr.shoe) || bestAlt.shoe;
+            bestAlt.source = cr.source || 'Cloud sync';
+            bestAlt.notes = cr.notes || bestAlt.notes;
+            if (cr.stravaActivityId) bestAlt.stravaActivityId = cr.stravaActivityId;
+            if (cr.laps?.length) bestAlt.laps = cr.laps;
+            updated++;
+          }
+          continue;
+        }
 
         // Score every available plan slot and pick the best one
         let bestSlot = null;
